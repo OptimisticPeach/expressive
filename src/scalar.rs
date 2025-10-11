@@ -32,3 +32,5 @@ pub enum Scalar {
     Rational(RationalComplex),
     Float(FloatComplex),
 }
+
+impl Scalar {}

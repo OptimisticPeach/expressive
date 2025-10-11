@@ -132,8 +132,8 @@ impl Matrix {
 
         if self.width == 2 {
             let result = self[(0, 0)]
-                .mul(&self[(1, 1)])
-                .sub(&self[(0, 1)].mul(&self[(1, 0)]));
+                .mul(&self[(1, 1)])?
+                .sub(&self[(0, 1)].mul(&self[(1, 0)])?)?;
 
             return Ok(result);
         }
@@ -145,9 +145,9 @@ impl Matrix {
             let inner = self.remove_col_row(0, i).and_then(|x| x.det())?;
 
             if i % 2 == 0 {
-                acc = acc.add(&pivot.mul(&inner));
+                acc = acc.add(&pivot.mul(&inner)?)?;
             } else {
-                acc = acc.sub(&pivot.mul(&inner));
+                acc = acc.sub(&pivot.mul(&inner)?)?;
             }
         }
 
@@ -242,19 +242,110 @@ impl Matrix {
                 let result = self
                     .iter_row(row)?
                     .zip(rhs.iter_col(col)?)
-                    .fold(Value::AdditiveId, |acc, (a, b)| acc.add(&a.mul(b)));
+                    .try_fold(Value::AdditiveId, |acc, (a, b)| acc.add(&a.mul(b)?));
 
-                this.elems.push(result)
+                this.elems.push(result?)
             }
         }
 
         Ok(this)
     }
 
-    pub fn hadamard_mul(&self, rhs: &Value) -> Result<Self> {
+    pub fn hadamard_op(
+        &self,
+        rhs: &Self,
+        mut op: impl FnMut(&Value, &Value) -> Result<Value>,
+    ) -> Result<Self> {
+        if self.width != rhs.width || self.height != rhs.height {
+            return Err(crate::errors::MathError::MatrixHadamardMismatch);
+        }
+
         return Ok(Self {
-            elems: self.elems.iter().map(|x| x.mul(rhs)).collect(),
+            elems: self
+                .elems
+                .iter()
+                .zip(rhs.elems.iter())
+                .map(move |(x, y)| op(x, y))
+                .collect::<Result<Vec<_>>>()?,
             ..*self
         });
+    }
+
+    pub fn scalar_mul(&self, rhs: &Value) -> Result<Self> {
+        return Ok(Self {
+            elems: self
+                .elems
+                .iter()
+                .map(|x| x.mul(rhs))
+                .collect::<Result<Vec<_>>>()?,
+            ..*self
+        });
+    }
+
+    pub fn select_cols(&self, cols: impl Iterator<Item = usize>) -> Result<Self> {
+        let mut this = Self {
+            elems: Vec::with_capacity(self.height),
+            width: 0,
+            height: self.height,
+        };
+
+        for col in cols {
+            if col >= self.width {
+                return Err(crate::errors::MathError::MatrixOutOfRange);
+            }
+
+            this.width += 1;
+            this.elems
+                .extend((0..self.height).map(|i| self[(col, i)].clone()));
+        }
+
+        if this.width == 0 {
+            return Err(crate::errors::MathError::EmptyMatrix);
+        }
+
+        Ok(this)
+    }
+
+    pub fn select_rows(&self, rows: impl Iterator<Item = usize>) -> Result<Self> {
+        let mut this = Self {
+            elems: Vec::with_capacity(self.width),
+            width: self.width,
+            height: 0,
+        };
+
+        for row in rows {
+            if row >= self.height {
+                return Err(crate::errors::MathError::MatrixOutOfRange);
+            }
+
+            this.height += 1;
+            let mut acc = 0;
+
+            for i in 0..this.width {
+                acc += this.height;
+
+                this.elems.insert(acc, this[(i, row)].clone());
+
+                acc += 1;
+            }
+        }
+
+        if this.height == 0 {
+            return Err(crate::errors::MathError::EmptyMatrix);
+        }
+
+        Ok(this)
+    }
+
+    pub fn add(&self, rhs: &Self) -> Result<Self> {
+        self.hadamard_op(rhs, Value::add)
+    }
+
+    pub fn sub(&self, rhs: &Self) -> Result<Self> {
+        self.hadamard_op(rhs, Value::sub)
+    }
+
+    pub fn mul_componentwise(&self, rhs: &Matrix) -> Result<Self> {
+        self.hadamard_op(rhs, Value::mul)
     }
 }

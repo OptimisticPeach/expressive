@@ -5,4 +5,7 @@ pub enum MathError {
     MatrixOutOfRange,
     AugmentShapeMismatch,
     MatrixMultShapeMismatch,
+    EmptyMatrix,
+    MatrixAddShapeMismatch,
+    MatrixHadamardMismatch,
 }

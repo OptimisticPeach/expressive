@@ -3,6 +3,7 @@ mod linalg;
 mod scalar;
 // mod trig;
 
+use errors::Result;
 use linalg::Matrix;
 use scalar::Scalar;
 
@@ -21,23 +22,23 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn add(&self, rhs: &Value) -> Value {
+    pub fn add(&self, rhs: &Value) -> Result<Value> {
         todo!()
     }
 
-    pub fn sub(&self, rhs: &Value) -> Value {
+    pub fn sub(&self, rhs: &Value) -> Result<Value> {
         todo!()
     }
 
-    pub fn mul(&self, rhs: &Value) -> Value {
+    pub fn mul(&self, rhs: &Value) -> Result<Value> {
         todo!()
     }
 
-    pub fn neg(&self) -> Value {
+    pub fn neg(&self) -> Result<Value> {
         todo!()
     }
 
-    pub fn invert(&self) -> Value {
+    pub fn invert(&self) -> Result<Value> {
         todo!()
     }
 
@@ -45,19 +46,19 @@ impl Value {
         todo!()
     }
 
-    pub fn identity(&self) -> Value {
+    pub fn identity(&self) -> Result<Value> {
         todo!()
     }
 
-    pub fn not(&self) -> Value {
-        Value::add(&self.identity(), &self.neg())
+    pub fn not(&self) -> Result<Value> {
+        Value::add(&self.identity()?, &self.neg()?)
     }
 
-    pub fn and(&self, rhs: &Value) -> Value {
+    pub fn and(&self, rhs: &Value) -> Result<Value> {
         self.mul(rhs)
     }
 
-    pub fn or(&self, rhs: &Value) -> Value {
-        self.neg().and(&rhs.neg()).neg()
+    pub fn or(&self, rhs: &Value) -> Result<Value> {
+        self.neg()?.and(&rhs.neg()?)?.neg()
     }
 }
