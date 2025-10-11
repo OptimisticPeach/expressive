@@ -1,207 +1,260 @@
-use nalgebra::{Matrix, RawStorage};
+use std::ops::{Index, IndexMut};
 
 use crate::Floatify;
+use crate::errors::Result;
 
 use super::Value;
 
-impl Value {
-    pub fn det(self) -> Value {
-        match self {
-            x @ (Value::RationalComplex(_) | Value::FloatComplex(_)) => x,
-            Value::RationalMatrix(matrix) => Value::FloatComplex(matrix.floatify().determinant()),
-            Value::FloatMatrix(matrix) => Value::FloatComplex(matrix.determinant()),
-        }
-    }
+/// Matrix stored in column-major format:
+/// [ 0 3 6 ]
+/// [ 1 4 7 ]
+/// [ 2 5 8 ]
+#[derive(Clone, Debug)]
+pub struct Matrix {
+    elems: Vec<Value>,
+    width: usize,
+    height: usize,
+}
 
-    pub fn index_row(mat: Value, which_row: Value) -> Value {
-        let idx = which_row.into_integer().unwrap();
+impl Index<(usize, usize)> for Matrix {
+    type Output = Value;
 
-        assert!(idx >= 0);
-
-        let idx = idx as usize;
-
-        match mat {
-            mat @ (Value::RationalComplex(_) | Value::FloatComplex(_)) => {
-                if idx != 0 {
-                    panic!("Cannot take row {idx} of a single scalar!");
-                }
-
-                mat
-            }
-            Value::RationalMatrix(matrix) => Value::RationalMatrix(to_dmat(&matrix.row(idx))),
-            Value::FloatMatrix(matrix) => Value::FloatMatrix(to_dmat(&matrix.row(idx))),
-        }
-    }
-
-    pub fn index_col(mat: Value, which_row: Value) -> Value {
-        let idx = which_row.into_integer().unwrap();
-
-        assert!(idx >= 0);
-
-        let idx = idx as usize;
-
-        match mat {
-            mat @ (Value::RationalComplex(_) | Value::FloatComplex(_)) => {
-                if idx != 0 {
-                    panic!("Cannot take row {idx} of a single scalar!");
-                }
-
-                mat
-            }
-            Value::RationalMatrix(matrix) => Value::RationalMatrix(to_dmat(&matrix.row(idx))),
-            Value::FloatMatrix(matrix) => Value::FloatMatrix(to_dmat(&matrix.row(idx))),
-        }
-    }
-
-    pub fn aug_vert(top: Value, bottom: Value) -> Value {
-        match (top, bottom) {
-            (Value::RationalComplex(top), Value::RationalComplex(bottom)) => Value::RationalMatrix(
-                Matrix::from_iterator_generic(nalgebra::Dyn(2), nalgebra::Dyn(1), [top, bottom]),
-            ),
-            (Value::FloatComplex(top), Value::FloatComplex(bottom)) => Value::FloatMatrix(
-                Matrix::from_iterator_generic(nalgebra::Dyn(2), nalgebra::Dyn(1), [top, bottom]),
-            ),
-            (Value::RationalComplex(top), Value::FloatComplex(bottom)) => {
-                Value::FloatMatrix(Matrix::from_iterator_generic(
-                    nalgebra::Dyn(2),
-                    nalgebra::Dyn(1),
-                    [top.floatify(), bottom],
-                ))
-            }
-            (Value::FloatComplex(top), Value::RationalComplex(bottom)) => {
-                Value::FloatMatrix(Matrix::from_iterator_generic(
-                    nalgebra::Dyn(2),
-                    nalgebra::Dyn(1),
-                    [top, bottom.floatify()],
-                ))
-            }
-            (Value::RationalComplex(_) | Value::FloatComplex(_), _)
-            | (_, Value::RationalComplex(_) | Value::FloatComplex(_)) => {
-                panic!("Cannot glue together a scalar with a matrix!")
-            }
-            (Value::RationalMatrix(top), Value::RationalMatrix(bottom)) => Value::RationalMatrix({
-                assert_eq!(top.shape().1, bottom.shape().1);
-
-                let rows = top.row_iter().chain(bottom.row_iter()).collect::<Vec<_>>();
-
-                Matrix::from_rows(&rows)
-            }),
-            (Value::RationalMatrix(top), Value::FloatMatrix(bottom)) => Value::FloatMatrix({
-                assert_eq!(top.shape().1, bottom.shape().1);
-
-                let rows = top
-                    .row_iter()
-                    .map(|x| x.map(|v| v.floatify()))
-                    .chain(bottom.row_iter().map(|x| x.map(|v| v)))
-                    .collect::<Vec<_>>();
-
-                Matrix::from_rows(&rows[..])
-            }),
-            (Value::FloatMatrix(top), Value::RationalMatrix(bottom)) => Value::FloatMatrix({
-                assert_eq!(top.shape().1, bottom.shape().1);
-
-                let rows = top
-                    .row_iter()
-                    .map(|x| x.map(|v| v))
-                    .chain(bottom.row_iter().map(|x| x.map(|v| v.floatify())))
-                    .collect::<Vec<_>>();
-
-                Matrix::from_rows(&rows[..])
-            }),
-            (Value::FloatMatrix(top), Value::FloatMatrix(bottom)) => Value::FloatMatrix({
-                assert_eq!(top.shape().1, bottom.shape().1);
-
-                let rows = top.row_iter().chain(bottom.row_iter()).collect::<Vec<_>>();
-
-                Matrix::from_rows(&rows)
-            }),
-        }
-    }
-
-    pub fn aug_horizontal(left: Value, right: Value) -> Value {
-        match (left, right) {
-            (Value::RationalComplex(left), Value::RationalComplex(right)) => Value::RationalMatrix(
-                Matrix::from_iterator_generic(nalgebra::Dyn(1), nalgebra::Dyn(2), [left, right]),
-            ),
-            (Value::FloatComplex(left), Value::FloatComplex(right)) => Value::FloatMatrix(
-                Matrix::from_iterator_generic(nalgebra::Dyn(1), nalgebra::Dyn(2), [left, right]),
-            ),
-            (Value::RationalComplex(left), Value::FloatComplex(right)) => {
-                Value::FloatMatrix(Matrix::from_iterator_generic(
-                    nalgebra::Dyn(1),
-                    nalgebra::Dyn(2),
-                    [left.floatify(), right],
-                ))
-            }
-            (Value::FloatComplex(left), Value::RationalComplex(right)) => {
-                Value::FloatMatrix(Matrix::from_iterator_generic(
-                    nalgebra::Dyn(1),
-                    nalgebra::Dyn(2),
-                    [left, right.floatify()],
-                ))
-            }
-            (Value::RationalComplex(_) | Value::FloatComplex(_), _)
-            | (_, Value::RationalComplex(_) | Value::FloatComplex(_)) => {
-                panic!("Cannot glue together a scalar with a matrix!")
-            }
-            (Value::RationalMatrix(left), Value::RationalMatrix(right)) => Value::RationalMatrix({
-                assert_eq!(left.shape().0, right.shape().0);
-
-                let columns = left
-                    .column_iter()
-                    .chain(right.column_iter())
-                    .collect::<Vec<_>>();
-
-                Matrix::from_columns(&columns)
-            }),
-            (Value::RationalMatrix(left), Value::FloatMatrix(right)) => Value::FloatMatrix({
-                assert_eq!(left.shape().1, right.shape().1);
-
-                let columns = left
-                    .column_iter()
-                    .map(|x| x.map(|v| v.floatify()))
-                    .chain(right.column_iter().map(|x| x.map(|v| v)))
-                    .collect::<Vec<_>>();
-
-                Matrix::from_columns(&columns[..])
-            }),
-            (Value::FloatMatrix(left), Value::RationalMatrix(right)) => Value::FloatMatrix({
-                assert_eq!(left.shape().1, right.shape().1);
-
-                let columns = left
-                    .column_iter()
-                    .map(|x| x.map(|v| v))
-                    .chain(right.column_iter().map(|x| x.map(|v| v.floatify())))
-                    .collect::<Vec<_>>();
-
-                Matrix::from_columns(&columns[..])
-            }),
-            (Value::FloatMatrix(left), Value::FloatMatrix(right)) => Value::FloatMatrix({
-                assert_eq!(left.shape().1, right.shape().1);
-
-                let columns = left
-                    .column_iter()
-                    .chain(right.column_iter())
-                    .collect::<Vec<_>>();
-
-                Matrix::from_columns(&columns)
-            }),
-        }
+    fn index(&self, (col, row): (usize, usize)) -> &Value {
+        &self.elems[row + col * self.height]
     }
 }
 
-fn to_dmat<T, R, C, S>(matrix: &Matrix<T, R, C, S>) -> nalgebra::DMatrix<T>
-where
-    T: Clone + PartialEq + std::fmt::Debug + num_traits::Zero + 'static,
-    R: nalgebra::Dim,
-    C: nalgebra::Dim,
-    S: RawStorage<T, R, C>,
-{
-    let mut dynamic_matrix = nalgebra::DMatrix::<T>::zeros(matrix.nrows(), matrix.ncols());
-    for i in 0..matrix.nrows() {
-        for j in 0..matrix.ncols() {
-            dynamic_matrix[(i, j)] = matrix[(i, j)].clone();
-        }
+impl IndexMut<(usize, usize)> for Matrix {
+    fn index_mut(&mut self, (col, row): (usize, usize)) -> &mut Value {
+        &mut self.elems[row + col * self.height]
     }
-    dynamic_matrix
+}
+
+impl Matrix {
+    pub fn iter(&self) -> impl Iterator<Item = (usize, usize, &Value)> {
+        self.elems
+            .iter()
+            .enumerate()
+            .map(|(idx, val)| (idx / self.height, idx % self.height, val))
+    }
+
+    pub fn iter_col(&self, col: usize) -> Result<impl Iterator<Item = &Value>> {
+        if col >= self.width {
+            return Err(crate::errors::MathError::MatrixOutOfRange);
+        }
+
+        return Ok((0..self.height).map(move |y| &self[(col, y)]));
+    }
+
+    pub fn iter_row(&self, row: usize) -> Result<impl Iterator<Item = &Value>> {
+        if row >= self.height {
+            return Err(crate::errors::MathError::MatrixOutOfRange);
+        }
+
+        return Ok((0..self.width).map(move |x| &self[(x, row)]));
+    }
+
+    pub fn remove_col(&self, col: usize) -> Result<Self> {
+        if col >= self.width {
+            return Err(crate::errors::MathError::MatrixOutOfRange);
+        }
+
+        let mut this = Self {
+            elems: Vec::with_capacity((self.width - 1) * self.height),
+            width: self.width - 1,
+            height: self.height,
+        };
+
+        this.elems.extend(
+            self.iter()
+                .filter(|(x, _, _)| *x != col)
+                .map(|(_, _, v)| v)
+                .cloned(),
+        );
+
+        Ok(this)
+    }
+
+    pub fn remove_row(&self, row: usize) -> Result<Self> {
+        if row >= self.height {
+            return Err(crate::errors::MathError::MatrixOutOfRange);
+        }
+
+        let mut this = Self {
+            elems: Vec::with_capacity(self.width * (self.height - 1)),
+            width: self.width,
+            height: self.height - 1,
+        };
+
+        this.elems.extend(
+            self.iter()
+                .filter(|(_, y, _)| *y != row)
+                .map(|(_, _, v)| v)
+                .cloned(),
+        );
+
+        Ok(this)
+    }
+
+    pub fn remove_col_row(&self, col: usize, row: usize) -> Result<Self> {
+        if col >= self.width {
+            return Err(crate::errors::MathError::MatrixOutOfRange);
+        }
+
+        if row >= self.height {
+            return Err(crate::errors::MathError::MatrixOutOfRange);
+        }
+
+        let mut this = Self {
+            elems: Vec::with_capacity((self.width - 1) * (self.height - 1)),
+            width: self.width - 1,
+            height: self.height - 1,
+        };
+
+        this.elems.extend(
+            self.iter()
+                .filter(|(x, y, _)| *x != col && *y != row)
+                .map(|(_, _, v)| v)
+                .cloned(),
+        );
+
+        Ok(this)
+    }
+
+    pub fn det(&self) -> Result<Value> {
+        if self.width != self.height {
+            return Err(crate::errors::MathError::NonSquareDeterminant);
+        }
+
+        if self.width == 1 {
+            return Ok(self.elems[0].clone());
+        }
+
+        if self.width == 2 {
+            let result = self[(0, 0)]
+                .mul(&self[(1, 1)])
+                .sub(&self[(0, 1)].mul(&self[(1, 0)]));
+
+            return Ok(result);
+        }
+
+        let mut acc = Value::AdditiveId;
+
+        for i in 0..self.width {
+            let pivot = self[(i, 0)].clone();
+            let inner = self.remove_col_row(0, i).and_then(|x| x.det())?;
+
+            if i % 2 == 0 {
+                acc = acc.add(&pivot.mul(&inner));
+            } else {
+                acc = acc.sub(&pivot.mul(&inner));
+            }
+        }
+
+        Ok(acc)
+    }
+
+    pub fn get_col(&self, col: usize) -> Result<Self> {
+        if col >= self.width {
+            return Err(crate::errors::MathError::MatrixOutOfRange);
+        }
+
+        let mut this = Self {
+            elems: Vec::with_capacity(self.height),
+            width: 1,
+            height: self.height,
+        };
+
+        this.elems
+            .extend((0..self.height).map(|i| self[(col, i)].clone()));
+
+        Ok(this)
+    }
+
+    pub fn get_row(&self, row: usize) -> Result<Self> {
+        if row >= self.height {
+            return Err(crate::errors::MathError::MatrixOutOfRange);
+        }
+
+        let mut this = Self {
+            elems: Vec::with_capacity(self.width),
+            width: self.width,
+            height: 1,
+        };
+
+        this.elems
+            .extend((0..self.width).map(|i| self[(i, row)].clone()));
+
+        Ok(this)
+    }
+
+    pub fn aug_vert(&self, bottom: &Self) -> Result<Self> {
+        if self.width != bottom.width {
+            return Err(crate::errors::MathError::AugmentShapeMismatch);
+        }
+
+        let mut this = Self {
+            elems: Vec::with_capacity((self.height + bottom.height) * self.width),
+            width: self.width,
+            height: self.height + bottom.height,
+        };
+
+        for col in 0..self.width {
+            this.elems
+                .extend_from_slice(&self.elems[self.height * col..(self.height + 1) * col]);
+            this.elems
+                .extend_from_slice(&bottom.elems[bottom.height * col..(bottom.height + 1) * col]);
+        }
+
+        Ok(this)
+    }
+
+    pub fn aug_hor(&self, right: &Self) -> Result<Self> {
+        if self.height != right.height {
+            return Err(crate::errors::MathError::AugmentShapeMismatch);
+        }
+
+        let mut this = Self {
+            elems: Vec::with_capacity(self.height * (self.width + right.width)),
+            width: self.width + right.width,
+            height: self.height,
+        };
+
+        this.elems.extend_from_slice(&self.elems);
+        this.elems.extend_from_slice(&right.elems);
+
+        Ok(this)
+    }
+
+    pub fn mul(&self, rhs: &Self) -> Result<Self> {
+        if self.width != rhs.height {
+            return Err(crate::errors::MathError::MatrixMultShapeMismatch);
+        }
+
+        let mut this = Self {
+            elems: Vec::with_capacity(self.height * rhs.width),
+            height: self.height,
+            width: rhs.width,
+        };
+
+        for col in 0..this.width {
+            for row in 0..this.height {
+                let result = self
+                    .iter_row(row)?
+                    .zip(rhs.iter_col(col)?)
+                    .fold(Value::AdditiveId, |acc, (a, b)| acc.add(&a.mul(b)));
+
+                this.elems.push(result)
+            }
+        }
+
+        Ok(this)
+    }
+
+    pub fn hadamard_mul(&self, rhs: &Value) -> Result<Self> {
+        return Ok(Self {
+            elems: self.elems.iter().map(|x| x.mul(rhs)).collect(),
+            ..*self
+        });
+    }
 }
