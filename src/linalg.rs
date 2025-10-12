@@ -500,4 +500,29 @@ impl Matrix {
     pub fn is_zero(&self) -> bool {
         self.elems.iter().all(|x| x.is_zero())
     }
+
+    pub fn transpose(&self) -> Result<Self> {
+        let mut this = Self {
+            elems: Vec::with_capacity(self.elems.capacity()),
+            width: self.height,
+            height: self.width,
+        };
+
+        for row in 0..self.height {
+            this.elems.extend(self.iter_row(row)?.cloned());
+        }
+
+        Ok(this)
+    }
+
+    pub fn conj(&self) -> Result<Self> {
+        Ok(Self {
+            elems: self
+                .elems
+                .iter()
+                .map(|x| x.conj())
+                .collect::<Result<Vec<_>>>()?,
+            ..*self
+        })
+    }
 }

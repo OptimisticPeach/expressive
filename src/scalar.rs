@@ -90,4 +90,11 @@ impl Scalar {
             Self::Float(x) => Ok(Self::Float(x.finv())),
         }
     }
+
+    pub fn conj(&self) -> Self {
+        match self {
+            Self::Rational(x) => Self::Rational(x.conj()),
+            Self::Float(x) => Self::Float(x.conj()),
+        }
+    }
 }

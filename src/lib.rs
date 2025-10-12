@@ -89,4 +89,18 @@ impl Value {
     pub fn or(&self, rhs: &Value) -> Result<Value> {
         self.neg()?.and(&rhs.neg()?)?.neg()
     }
+
+    pub fn conj(&self) -> Result<Value> {
+        match self {
+            Self::Scalar(x) => Ok(Self::Scalar(x.conj())),
+            Self::Matrix(x) => x.conj().map(Self::Matrix),
+        }
+    }
+
+    pub fn transpose(&self) -> Result<Value> {
+        match self {
+            Self::Matrix(x) => x.transpose().map(Self::Matrix),
+            x @ Self::Scalar(_) => Ok(x.clone()),
+        }
+    }
 }
