@@ -8,4 +8,5 @@ pub enum MathError {
     EmptyMatrix,
     MatrixAddShapeMismatch,
     MatrixHadamardMismatch,
+    AddScalarMatrix,
 }

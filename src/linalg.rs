@@ -43,7 +43,7 @@ impl Matrix {
             return Err(crate::errors::MathError::MatrixOutOfRange);
         }
 
-        return Ok((0..self.height).map(move |y| &self[(col, y)]));
+        Ok((0..self.height).map(move |y| &self[(col, y)]))
     }
 
     pub fn iter_row(&self, row: usize) -> Result<impl Iterator<Item = &Value>> {
@@ -51,7 +51,7 @@ impl Matrix {
             return Err(crate::errors::MathError::MatrixOutOfRange);
         }
 
-        return Ok((0..self.width).map(move |x| &self[(x, row)]));
+        Ok((0..self.width).map(move |x| &self[(x, row)]))
     }
 
     pub fn remove_col(&self, col: usize) -> Result<Self> {
@@ -138,17 +138,21 @@ impl Matrix {
             return Ok(result);
         }
 
-        let mut acc = Value::AdditiveId;
-
-        for i in 0..self.width {
+        let make_val = |i: usize| -> Result<Value> {
             let pivot = self[(i, 0)].clone();
-            let inner = self.remove_col_row(0, i).and_then(|x| x.det())?;
+            let inner = self.remove_col_row(i, 0).and_then(|x| x.det())?;
 
             if i % 2 == 0 {
-                acc = acc.add(&pivot.mul(&inner)?)?;
+                pivot.mul(&inner)
             } else {
-                acc = acc.sub(&pivot.mul(&inner)?)?;
+                pivot.mul(&inner).and_then(|x| x.neg())
             }
+        };
+
+        let mut acc = make_val(0)?;
+
+        for i in 1..self.width {
+            acc = acc.add(&make_val(i)?)?;
         }
 
         Ok(acc)
@@ -242,7 +246,9 @@ impl Matrix {
                 let result = self
                     .iter_row(row)?
                     .zip(rhs.iter_col(col)?)
-                    .try_fold(Value::AdditiveId, |acc, (a, b)| acc.add(&a.mul(b)?));
+                    .map(|(a, b)| a.mul(b))
+                    .reduce(|acc, rhs| acc.and_then(|x| x.add(&rhs?)))
+                    .unwrap();
 
                 this.elems.push(result?)
             }
@@ -260,7 +266,7 @@ impl Matrix {
             return Err(crate::errors::MathError::MatrixHadamardMismatch);
         }
 
-        return Ok(Self {
+        Ok(Self {
             elems: self
                 .elems
                 .iter()
@@ -268,18 +274,18 @@ impl Matrix {
                 .map(move |(x, y)| op(x, y))
                 .collect::<Result<Vec<_>>>()?,
             ..*self
-        });
+        })
     }
 
     pub fn scalar_mul(&self, rhs: &Value) -> Result<Self> {
-        return Ok(Self {
+        Ok(Self {
             elems: self
                 .elems
                 .iter()
                 .map(|x| x.mul(rhs))
                 .collect::<Result<Vec<_>>>()?,
             ..*self
-        });
+        })
     }
 
     pub fn select_cols(&self, cols: impl Iterator<Item = usize>) -> Result<Self> {
@@ -347,5 +353,16 @@ impl Matrix {
 
     pub fn mul_componentwise(&self, rhs: &Matrix) -> Result<Self> {
         self.hadamard_op(rhs, Value::mul)
+    }
+
+    pub fn neg(&self) -> Result<Self> {
+        Ok(Self {
+            elems: self
+                .elems
+                .iter()
+                .map(|x| x.neg())
+                .collect::<Result<Vec<_>>>()?,
+            ..*self
+        })
     }
 }
