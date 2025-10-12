@@ -1,4 +1,4 @@
-use crate::Floatify;
+use crate::{Floatify, errors::Result};
 use num_complex::Complex;
 use num_rational::Ratio;
 use num_traits::ToPrimitive;
@@ -58,6 +58,9 @@ macro_rules! impl_scalar_ops {
 }
 
 impl Scalar {
+    pub const ONE: Self = Scalar::Rational(RationalComplex::ONE);
+    pub const ZERO: Self = Scalar::Rational(RationalComplex::ZERO);
+
     impl_scalar_ops!(add, (+));
     impl_scalar_ops!(sub, (-));
     impl_scalar_ops!(mul, (*));
@@ -67,6 +70,24 @@ impl Scalar {
         match self {
             Self::Rational(x) => Self::Rational(-x),
             Self::Float(x) => Self::Float(-x),
+        }
+    }
+
+    pub fn is_zero(&self) -> bool {
+        match self {
+            Self::Rational(x) => *x.norm_sqr().numer() == 0,
+            Self::Float(x) => x.norm_sqr() == 0.0,
+        }
+    }
+
+    pub fn invert(&self) -> Result<Self> {
+        if self.is_zero() {
+            return Err(crate::errors::MathError::DivideByZero);
+        }
+
+        match self {
+            Self::Rational(x) => Ok(Self::Rational(x.inv())),
+            Self::Float(x) => Ok(Self::Float(x.finv())),
         }
     }
 }

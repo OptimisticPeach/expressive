@@ -57,16 +57,25 @@ impl Value {
         }
     }
 
-    pub fn invert(&self) -> Result<Value> {
-        todo!()
+    pub fn is_zero(&self) -> bool {
+        match self {
+            Self::Scalar(x) => x.is_zero(),
+            Self::Matrix(x) => x.is_zero(),
+        }
     }
 
-    pub fn into_integer(&self) -> Option<i128> {
-        todo!()
+    pub fn invert(&self) -> Result<Value> {
+        match self {
+            Self::Scalar(x) => x.invert().map(Value::Scalar),
+            Self::Matrix(x) => x.invert().map(Value::Matrix),
+        }
     }
 
     pub fn identity(&self) -> Result<Value> {
-        todo!()
+        match self {
+            Value::Scalar(_) => Ok(Value::Scalar(Scalar::ONE)),
+            Value::Matrix(x) => x.square_identity().map(Value::Matrix),
+        }
     }
 
     pub fn not(&self) -> Result<Value> {

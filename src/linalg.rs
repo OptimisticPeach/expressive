@@ -2,6 +2,7 @@ use std::ops::{Index, IndexMut};
 
 use crate::Floatify;
 use crate::errors::Result;
+use crate::scalar::Scalar;
 
 use super::Value;
 
@@ -31,6 +32,10 @@ impl IndexMut<(usize, usize)> for Matrix {
 }
 
 impl Matrix {
+    pub fn get_idx(&self, col: usize, row: usize) -> usize {
+        row + col * self.height
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (usize, usize, &Value)> {
         self.elems
             .iter()
@@ -364,5 +369,135 @@ impl Matrix {
                 .collect::<Result<Vec<_>>>()?,
             ..*self
         })
+    }
+
+    fn swap_rows(&mut self, r1: usize, r2: usize) -> Result<()> {
+        if r1 >= self.height || r2 >= self.height {
+            return Err(crate::errors::MathError::MatrixOutOfRange);
+        }
+
+        if r1 == r2 {
+            return Ok(());
+        }
+
+        for i in 0..self.width {
+            let idx_1 = self.get_idx(i, r1);
+            let idx_2 = self.get_idx(i, r2);
+
+            self.elems.swap(idx_1, idx_2);
+        }
+
+        Ok(())
+    }
+
+    fn scale_row(&mut self, row: usize, value: &Value) -> Result<()> {
+        if row >= self.height {
+            return Err(crate::errors::MathError::MatrixOutOfRange);
+        }
+
+        for i in 0..self.width {
+            self[(i, row)] = value.mul(&self[(i, row)])?;
+        }
+
+        Ok(())
+    }
+
+    // Rdest -= scale * src
+    fn sub_row(&mut self, src: usize, dest: usize, scale: &Value) -> Result<()> {
+        if src >= self.height || dest >= self.height {
+            return Err(crate::errors::MathError::MatrixOutOfRange);
+        }
+
+        for i in 0..self.width {
+            self[(i, dest)] = self[(i, dest)].sub(&scale.mul(&self[(i, src)])?)?;
+        }
+
+        Ok(())
+    }
+
+    fn row_echelon_form_internal(&self, reduced: bool) -> Result<(Self, usize)> {
+        let mut this = self.clone();
+
+        let mut row = 0;
+        let mut end_col = this.width - 1;
+
+        for col in 0..this.width {
+            if row >= this.height {
+                end_col = col;
+                break;
+            }
+
+            let mut pivot_row = None;
+
+            for search in row..this.height {
+                // todo: should be is_invertible
+                if !this[(col, search)].is_zero() {
+                    pivot_row = Some(search);
+                    break;
+                }
+            }
+
+            let Some(pivot_row) = pivot_row else { continue };
+
+            if pivot_row != row {
+                this.swap_rows(row, pivot_row)?;
+            }
+
+            let pivot_scale = this[(col, row)].invert()?;
+
+            for clear in (row + 1)..this.height {
+                this.sub_row(row, clear, &this[(col, clear)].mul(&pivot_scale)?)?;
+            }
+
+            if reduced {
+                for clear in 0..row {
+                    this.sub_row(row, clear, &this[(col, clear)].mul(&pivot_scale)?)?;
+                }
+
+                this.scale_row(row, &pivot_scale)?;
+            }
+
+            row += 1;
+        }
+
+        Ok((this, end_col))
+    }
+
+    #[doc(alias = "rref")]
+    pub fn row_echelon_form(&self, reduced: bool) -> Result<Self> {
+        self.row_echelon_form_internal(reduced).map(|x| x.0)
+    }
+
+    pub fn square_identity(&self) -> Result<Self> {
+        if self.width != self.height {
+            return Err(crate::errors::MathError::MatrixNotSquare);
+        }
+
+        let this = Self {
+            elems: self
+                .iter()
+                .map(|(x, y, _)| if x == y { Scalar::ONE } else { Scalar::ZERO })
+                .map(Value::Scalar)
+                .collect(),
+            ..*self
+        };
+
+        Ok(this)
+    }
+
+    pub fn invert(&self) -> Result<Self> {
+        let aug = self.aug_hor(&self.square_identity()?)?;
+
+        let (rref, last_col) = aug.row_echelon_form_internal(true)?;
+
+        if last_col >= self.width {
+            return Err(crate::errors::MathError::MatrixNotInvertible);
+        }
+
+        rref.select_cols(self.width..self.width * 2)
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.elems.iter().all(|x| x.is_zero())
     }
 }

@@ -9,4 +9,7 @@ pub enum MathError {
     MatrixAddShapeMismatch,
     MatrixHadamardMismatch,
     AddScalarMatrix,
+    DivideByZero,
+    MatrixNotSquare,
+    MatrixNotInvertible,
 }
