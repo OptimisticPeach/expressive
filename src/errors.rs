@@ -12,4 +12,6 @@ pub enum MathError {
     DivideByZero,
     MatrixNotSquare,
     MatrixNotInvertible,
+    NotImplemented,
+    UnsupportedMatrix,
 }

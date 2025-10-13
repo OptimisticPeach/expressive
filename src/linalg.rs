@@ -525,4 +525,32 @@ impl Matrix {
             ..*self
         })
     }
+
+    pub fn exp(&self) -> Result<Self> {
+        Err(crate::errors::MathError::NotImplemented)
+    }
+
+    pub fn sin(&self) -> Result<Self> {
+        Err(crate::errors::MathError::NotImplemented)
+    }
+
+    pub fn cos(&self) -> Result<Self> {
+        Err(crate::errors::MathError::NotImplemented)
+    }
+
+    pub fn tan(&self) -> Result<Self> {
+        Err(crate::errors::MathError::NotImplemented)
+    }
+
+    pub fn sinh(&self) -> Result<Self> {
+        Err(crate::errors::MathError::NotImplemented)
+    }
+
+    pub fn cosh(&self) -> Result<Self> {
+        Err(crate::errors::MathError::NotImplemented)
+    }
+
+    pub fn tanh(&self) -> Result<Self> {
+        Err(crate::errors::MathError::NotImplemented)
+    }
 }

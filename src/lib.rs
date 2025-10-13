@@ -104,3 +104,32 @@ impl Value {
         }
     }
 }
+
+macro_rules! trig_ops {
+    (($($both:ident),+), ($($scalar:ident),+)) => {
+        $(
+            pub fn $both(&self) -> Result<Value> {
+                match self {
+                    Self::Scalar(x) => Ok(Self::Scalar(x.$both())),
+                    Self::Matrix(m) => m.$both().map(Self::Matrix),
+                }
+            }
+        )+
+
+        $(
+            pub fn $scalar(&self) -> Result<Value> {
+                match self {
+                    Self::Scalar(x) => Ok(Self::Scalar(x.$scalar())),
+                    Self::Matrix(_) => Err(errors::MathError::UnsupportedMatrix),
+                }
+            }
+        )+
+    }
+}
+
+impl Value {
+    trig_ops! {
+        (exp, sin, cos, tan, sinh, cosh, tanh),
+        (ln, sqrt, asin, acos, atan, asinh, acosh, atanh)
+    }
+}

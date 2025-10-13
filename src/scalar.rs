@@ -1,5 +1,5 @@
 use crate::{Floatify, errors::Result};
-use num_complex::Complex;
+use num_complex::{Complex, ComplexFloat};
 use num_rational::Ratio;
 use num_traits::ToPrimitive;
 
@@ -57,9 +57,26 @@ macro_rules! impl_scalar_ops {
     }
 }
 
+macro_rules! impl_float_ops {
+    ($($name:ident),+$(,)?) => {
+        $(
+            pub fn $name(&self) -> Self {
+                Self::Float(self.float().$name())
+            }
+        )+
+    }
+}
+
 impl Scalar {
     pub const ONE: Self = Scalar::Rational(RationalComplex::ONE);
     pub const ZERO: Self = Scalar::Rational(RationalComplex::ZERO);
+
+    fn float(&self) -> FloatComplex {
+        match self {
+            Scalar::Rational(complex) => complex.floatify(),
+            Scalar::Float(complex) => *complex,
+        }
+    }
 
     impl_scalar_ops!(add, (+));
     impl_scalar_ops!(sub, (-));
@@ -97,4 +114,8 @@ impl Scalar {
             Self::Float(x) => Self::Float(x.conj()),
         }
     }
+
+    impl_float_ops!(
+        exp, ln, sqrt, sin, cos, tan, sinh, cosh, tanh, asin, acos, atan, asinh, acosh, atanh,
+    );
 }
