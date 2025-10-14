@@ -1,7 +1,7 @@
 mod errors;
+mod function;
 mod linalg;
 mod scalar;
-// mod trig;
 
 use errors::Result;
 use linalg::Matrix;
