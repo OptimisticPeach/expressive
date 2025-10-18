@@ -19,6 +19,17 @@ pub enum Value {
     Matrix(Matrix),
 }
 
+impl Floatify for Value {
+    type Floated = Self;
+
+    fn floatify(self) -> Self::Floated {
+        match self {
+            Self::Scalar(x) => Self::Scalar(x.floatify()),
+            Self::Matrix(x) => Self::Matrix(x.floatify()),
+        }
+    }
+}
+
 impl Value {
     pub fn add(&self, rhs: &Value) -> Result<Value> {
         match (self, rhs) {
@@ -50,6 +61,19 @@ impl Value {
         }
     }
 
+    pub fn div(&self, rhs: &Value) -> Result<Value> {
+        let result = match (self, rhs) {
+            (Value::Scalar(x), Value::Scalar(y)) => Value::Scalar(x.div(y)?),
+            (Value::Matrix(x), Value::Scalar(y)) => {
+                Value::Matrix(x.scalar_mul(&Value::Scalar(y.invert()?))?)
+            }
+            (x @ Value::Scalar(_), Value::Matrix(y)) => Value::Matrix(y.invert()?.scalar_mul(x)?),
+            (Value::Matrix(x), Value::Matrix(y)) => Value::Matrix(x.mul(&y.invert()?)?),
+        };
+
+        Ok(result)
+    }
+
     pub fn neg(&self) -> Result<Value> {
         match self {
             Self::Scalar(x) => Ok(Self::Scalar(x.neg())),
@@ -74,7 +98,7 @@ impl Value {
     pub fn identity(&self) -> Result<Value> {
         match self {
             Value::Scalar(_) => Ok(Value::Scalar(Scalar::ONE)),
-            Value::Matrix(x) => x.square_identity().map(Value::Matrix),
+            Value::Matrix(x) => x.my_identity().map(Value::Matrix),
         }
     }
 
@@ -101,6 +125,13 @@ impl Value {
         match self {
             Self::Matrix(x) => x.transpose().map(Self::Matrix),
             x @ Self::Scalar(_) => Ok(x.clone()),
+        }
+    }
+
+    pub fn norm_sq(&self) -> Result<Value> {
+        match self {
+            Self::Scalar(x) => Ok(Self::Scalar(x.mul(&x.conj()))),
+            Self::Matrix(x) => x.norm_sq(),
         }
     }
 }

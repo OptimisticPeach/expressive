@@ -78,10 +78,14 @@ impl Scalar {
         }
     }
 
+    // todo: failsafe to go to f64 if we overflow i128
     impl_scalar_ops!(add, (+));
     impl_scalar_ops!(sub, (-));
     impl_scalar_ops!(mul, (*));
-    impl_scalar_ops!(div, (/));
+
+    pub fn div(&self, rhs: &Self) -> Result<Self> {
+        Ok(self.mul(&rhs.invert()?))
+    }
 
     pub fn neg(&self) -> Self {
         match self {
@@ -115,7 +119,72 @@ impl Scalar {
         }
     }
 
+    fn faithful_integer(&self) -> Option<i128> {
+        match self {
+            Scalar::Rational(complex) => {
+                if complex.im.reduced() != Ratio::ZERO {
+                    return None;
+                }
+
+                // docs say not necessary, but just in case
+                let reduced = complex.re.reduced();
+
+                if reduced.is_integer() {
+                    Some(reduced.to_integer())
+                } else {
+                    None
+                }
+            }
+            Scalar::Float(complex) => {
+                if complex.im != 0.0 {
+                    return None;
+                }
+
+                if complex.im.fract() == 0.0 {
+                    Some(complex.im as i128)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    pub fn pow(&self, power: &Self) -> Self {
+        let floated = match self {
+            Scalar::Rational(complex) => {
+                if let Some(pow) = power.faithful_integer() {
+                    let result =
+                        complex.powi(pow.min(i32::MAX as i128).max(i32::MIN as i128) as i32);
+                    return Self::Rational(result);
+                }
+
+                complex.floatify()
+            }
+            Scalar::Float(complex) => *complex,
+        };
+
+        Self::Float(floated.powc(power.float()))
+    }
+
     impl_float_ops!(
         exp, ln, sqrt, sin, cos, tan, sinh, cosh, tanh, asin, acos, atan, asinh, acosh, atanh,
     );
+
+    pub fn from_integer(integer: i128) -> Self {
+        Self::Rational(Complex {
+            re: Ratio::from_integer(integer),
+            im: Ratio::ZERO,
+        })
+    }
+
+    pub fn from_float(float: f64) -> Self {
+        Self::Float(Complex { re: float, im: 0.0 })
+    }
+
+    pub fn from_num_denom(num: i128, denom: i128) -> Self {
+        Self::Rational(Complex {
+            re: Ratio::new(num, denom),
+            im: Ratio::ZERO,
+        })
+    }
 }

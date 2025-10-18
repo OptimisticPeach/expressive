@@ -1,6 +1,9 @@
+#![allow(dead_code)]
+
 use std::ops::{Index, IndexMut};
 
 use crate::Floatify;
+
 use crate::errors::Result;
 use crate::scalar::Scalar;
 
@@ -15,6 +18,18 @@ pub struct Matrix {
     elems: Vec<Value>,
     width: usize,
     height: usize,
+}
+
+impl Floatify for Matrix {
+    type Floated = Self;
+
+    fn floatify(mut self) -> Self::Floated {
+        self.elems
+            .iter_mut()
+            .for_each(|x| *x = x.clone().floatify());
+
+        self
+    }
 }
 
 impl Index<(usize, usize)> for Matrix {
@@ -233,6 +248,37 @@ impl Matrix {
         this.elems.extend_from_slice(&right.elems);
 
         Ok(this)
+    }
+
+    // Fills in off-diagonals with zeros
+    pub fn aug_diag(&self, bottom_right: &Self) -> Self {
+        let width = self.width + bottom_right.width;
+        let height = self.height + bottom_right.height;
+
+        let mut this = Self {
+            elems: Vec::with_capacity(width * height),
+            width,
+            height,
+        };
+
+        for col in 0..self.width {
+            this.elems
+                .extend_from_slice(&self.elems[col * self.height..(col + 1) * self.height]);
+
+            this.elems
+                .extend(std::iter::repeat_n(Scalar::ZERO, bottom_right.height).map(Value::Scalar));
+        }
+
+        for col in 0..bottom_right.width {
+            this.elems
+                .extend(std::iter::repeat_n(Scalar::ZERO, bottom_right.height).map(Value::Scalar));
+
+            this.elems.extend_from_slice(
+                &bottom_right.elems[col * bottom_right.height..(col + 1) * bottom_right.height],
+            );
+        }
+
+        this
     }
 
     pub fn mul(&self, rhs: &Self) -> Result<Self> {
@@ -468,25 +514,103 @@ impl Matrix {
         self.row_echelon_form_internal(reduced).map(|x| x.0)
     }
 
-    pub fn square_identity(&self) -> Result<Self> {
-        if self.width != self.height {
-            return Err(crate::errors::MathError::MatrixNotSquare);
+    pub fn identity(width: usize) -> Result<Self> {
+        if width == 0 {
+            return Err(crate::errors::MathError::ZeroSizeMatrix);
         }
 
         let this = Self {
-            elems: self
-                .iter()
-                .map(|(x, y, _)| if x == y { Scalar::ONE } else { Scalar::ZERO })
+            elems: (0..width)
+                .map(move |x| (0..width).map(move |y| (x, y)))
+                .flatten()
+                .map(|(x, y)| if x == y { Scalar::ONE } else { Scalar::ZERO })
                 .map(Value::Scalar)
                 .collect(),
-            ..*self
+            width,
+            height: width,
         };
 
         Ok(this)
     }
 
+    pub fn my_identity(&self) -> Result<Self> {
+        if !(self.width == self.height || self.width == 1 || self.height == 1) {
+            return Err(crate::errors::MathError::NoIdentityMatrix);
+        }
+
+        let this = Self::identity(self.width.max(self.height));
+
+        this
+    }
+
+    pub fn col_from_iter(iter: impl IntoIterator<Item = Value>) -> Self {
+        let elems = Vec::from_iter(iter);
+
+        let height = elems.len();
+
+        Self {
+            elems,
+            width: 1,
+            height,
+        }
+    }
+
+    pub fn row_from_iter(iter: impl IntoIterator<Item = Value>) -> Self {
+        let elems = Vec::from_iter(iter);
+
+        let width = elems.len();
+
+        Self {
+            elems,
+            width,
+            height: 1,
+        }
+    }
+
+    pub fn my_basis_elem(&self, elem: usize) -> Result<Self> {
+        // defaults to column vector
+        if self.height == self.width || self.width == 1 {
+            if elem >= self.height {
+                return Err(crate::errors::MathError::MatrixOutOfRange);
+            }
+
+            let mut result = Self::col_from_iter(std::iter::repeat_n(
+                Value::Scalar(Scalar::ZERO),
+                self.height,
+            ));
+
+            result.elems[elem] = Value::Scalar(Scalar::ONE);
+
+            Ok(result)
+        } else if self.height == 1 {
+            if elem >= self.width {
+                return Err(crate::errors::MathError::MatrixOutOfRange);
+            }
+
+            let mut result = Self::row_from_iter(std::iter::repeat_n(
+                Value::Scalar(Scalar::ZERO),
+                self.height,
+            ));
+
+            result.elems[elem] = Value::Scalar(Scalar::ONE);
+
+            Ok(result)
+        } else {
+            Err(crate::errors::MathError::NoIdentityMatrix)
+        }
+    }
+
+    pub fn zero_matrix(&self) -> Self {
+        Self {
+            elems: std::iter::repeat_n(Scalar::ZERO, self.elems.len())
+                .map(Value::Scalar)
+                .collect(),
+            ..*self
+        }
+    }
+
     pub fn invert(&self) -> Result<Self> {
-        let aug = self.aug_hor(&self.square_identity()?)?;
+        let aug = self.aug_hor(&self.my_identity()?)?;
 
         let (rref, last_col) = aug.row_echelon_form_internal(true)?;
 
@@ -503,7 +627,7 @@ impl Matrix {
 
     pub fn transpose(&self) -> Result<Self> {
         let mut this = Self {
-            elems: Vec::with_capacity(self.elems.capacity()),
+            elems: Vec::with_capacity(self.elems.len()),
             width: self.height,
             height: self.width,
         };
@@ -526,8 +650,12 @@ impl Matrix {
         })
     }
 
-    pub fn exp(&self) -> Result<Self> {
-        Err(crate::errors::MathError::NotImplemented)
+    pub fn norm_sq(&self) -> Result<Value> {
+        self.elems
+            .iter()
+            .map(|x| x.norm_sq())
+            .reduce(|x, y| x.and_then(|x| y.and_then(|y| x.add(&y))))
+            .unwrap() // Option unwrap
     }
 
     pub fn sin(&self) -> Result<Self> {
@@ -553,4 +681,189 @@ impl Matrix {
     pub fn tanh(&self) -> Result<Self> {
         Err(crate::errors::MathError::NotImplemented)
     }
+
+    // Matrix exponentiation through Sylvester's Formula
+    fn exp_inner(&self, eigenvalues: &[(Scalar, usize)]) -> Result<Self> {
+        let mut coeff_matrix = Self {
+            elems: Vec::with_capacity(self.elems.len()),
+            ..*self
+        };
+
+        let mut lambdas = Vec::with_capacity(self.width);
+        let mut exponents = Vec::with_capacity(self.width);
+
+        for (lambda, mult) in eigenvalues {
+            for i in 0..*mult {
+                lambdas.push(*lambda);
+                exponents.push(i);
+            }
+        }
+
+        fn make_coeff(n: usize, k: usize, lambda: Scalar) -> Scalar {
+            let n = n as u128;
+            let k = k as u128;
+            // result is nCr(n, k) * k! * lambda^(n-k)
+            if n < k {
+                return Scalar::ZERO;
+            }
+
+            let power = Scalar::from_integer((n - k) as i128);
+
+            let power = lambda.pow(&power);
+
+            let coeff = binomial(n, k) * factorial(k);
+
+            if coeff > i128::MAX as u128 {
+                Scalar::from_float(coeff as f64).mul(&power)
+            } else {
+                Scalar::from_integer(coeff as i128).mul(&power)
+            }
+        }
+
+        for col in 0..self.width {
+            let lambda = lambdas[col];
+            let power = exponents[col];
+
+            // row is derivative
+            for row in 0..self.height {
+                coeff_matrix
+                    .elems
+                    .push(Value::Scalar(make_coeff(row, power, lambda)));
+            }
+        }
+
+        let inverted = coeff_matrix.invert()?;
+
+        let mut powers = Vec::with_capacity(self.width);
+
+        powers.push(self.my_identity()?);
+
+        if self.width > 1 {
+            powers.push(self.clone());
+        }
+
+        let mut acc = self.clone();
+        for _ in 2..self.width {
+            acc = acc.mul(self)?;
+            powers.push(acc.clone());
+        }
+
+        // We solved M B = A for B where both B and A are vectors of matrices.
+        // `powers` is `A`, and it contains `I, A, A^2, A^3, ...`.
+        // We now compute:
+        let mut result = self.zero_matrix();
+
+        for row in 0..self.height {
+            let lambda_coeff = Value::Scalar(lambdas[row].exp());
+
+            let mut acc = self.zero_matrix();
+
+            for (power, coeff) in powers.iter().zip(inverted.iter_row(row)?) {
+                acc = acc.add(&power.scalar_mul(coeff)?)?;
+            }
+
+            result = result.add(&acc.scalar_mul(&lambda_coeff)?)?;
+        }
+
+        Ok(result)
+    }
+
+    // Householder matrix for given column vector
+    pub fn householder_matrix(&self) -> Result<Self> {
+        if self.width != 1 {
+            return Err(crate::errors::MathError::NotColumnVector);
+        }
+
+        let star = self.conj()?.transpose()?;
+
+        let numerator = self.mul(&star)?;
+
+        let denominator = self.norm_sq()?;
+
+        numerator.my_identity()?.sub(
+            &numerator.scalar_mul(&Value::Scalar(Scalar::from_integer(2)).div(&denominator)?)?,
+        )
+    }
+
+    pub fn lower_hessenberg(&self) -> Result<Self> {
+        if self.width != self.height {
+            return Err(crate::errors::MathError::MatrixNotSquare);
+        }
+
+        if self.width < 3 {
+            return Ok(self.clone());
+        }
+
+        let mut prod_acc = self.my_identity()?;
+
+        let mut rectangle = self.remove_row(0)?;
+        for i in 0..self.width - 2 {
+            let col = rectangle.get_col(0)?;
+
+            let vector = col.my_basis_elem(0)?.scalar_mul(&col.norm_sq()?)?;
+            let vector = vector.sub(&col)?;
+
+            let householder = vector.householder_matrix()?;
+
+            let matrix = Self::identity(i + 1)?.aug_diag(&householder);
+
+            prod_acc = matrix.mul(&prod_acc)?;
+
+            rectangle = rectangle.remove_col_row(0, 0)?;
+        }
+
+        prod_acc.mul(self)
+    }
+
+    // todo: finish a proper exp impl instead of this
+    // taylor series eval
+    pub fn exp(&self) -> Result<Self> {
+        let mut acc = self.my_identity()?;
+
+        let mut prod_acc = self.clone();
+        let mut factorial_acc = 1;
+        for i in 2..12 {
+            acc = acc.add(
+                &prod_acc.scalar_mul(&Value::Scalar(Scalar::from_num_denom(1, factorial_acc)))?,
+            )?;
+
+            prod_acc = prod_acc.mul(self)?;
+            factorial_acc *= i;
+        }
+
+        Ok(acc)
+    }
+}
+
+fn factorial(n: u128) -> u128 {
+    let mut result = 1;
+
+    for i in 2..n {
+        result *= i;
+    }
+
+    result
+}
+
+fn binomial(n: u128, k: u128) -> u128 {
+    if n < k {
+        return 0;
+    }
+
+    if k == 0 || k == n {
+        return 1;
+    }
+
+    let min = k.min(n - k);
+    let max = k.max(n - k);
+
+    let mut result = 1;
+
+    for i in (max - 1..n + 1).rev() {
+        result *= i;
+    }
+
+    result /= factorial(min);
+
+    result
 }

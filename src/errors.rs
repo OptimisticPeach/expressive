@@ -14,4 +14,7 @@ pub enum MathError {
     MatrixNotInvertible,
     NotImplemented,
     UnsupportedMatrix,
+    NotColumnVector,
+    NoIdentityMatrix,
+    ZeroSizeMatrix,
 }
