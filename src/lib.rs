@@ -114,6 +114,12 @@ impl Value {
         self.neg()?.and(&rhs.neg()?)?.neg()
     }
 
+    pub fn xor(&self, rhs: &Value) -> Result<Value> {
+        // xor = |a, b| { (a && !b) || (!a && b) }
+        // == |a, b| { (a || b) && (!a || !b) }
+        self.or(rhs)?.and(&self.not()?.or(&rhs.not()?)?)
+    }
+
     pub fn conj(&self) -> Result<Value> {
         match self {
             Self::Scalar(x) => Ok(Self::Scalar(x.conj())),

@@ -394,6 +394,40 @@ impl Matrix {
         Ok(this)
     }
 
+    pub fn from_size_slice_rowmaj(width: usize, height: usize, values: &[Value]) -> Result<Self> {
+        if values.len() != width * height {
+            Err(crate::errors::MathError::WrongNumberOfArgs)?;
+        }
+
+        let mut this = Self {
+            elems: Vec::with_capacity(width * height),
+            width,
+            height,
+        };
+
+        for col in 0..width {
+            for row in 0..height {
+                this.elems.push(values[row * width + col].clone());
+            }
+        }
+
+        Ok(this)
+    }
+
+    pub fn from_size_slice_colmaj(width: usize, height: usize, values: &[Value]) -> Result<Self> {
+        if values.len() != width * height {
+            Err(crate::errors::MathError::WrongNumberOfArgs)?;
+        }
+
+        let this = Self {
+            elems: values.into(),
+            width,
+            height,
+        };
+
+        Ok(this)
+    }
+
     pub fn add(&self, rhs: &Self) -> Result<Self> {
         self.hadamard_op(rhs, Value::add)
     }

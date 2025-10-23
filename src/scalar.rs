@@ -70,6 +70,7 @@ macro_rules! impl_float_ops {
 impl Scalar {
     pub const ONE: Self = Scalar::Rational(RationalComplex::ONE);
     pub const ZERO: Self = Scalar::Rational(RationalComplex::ZERO);
+    pub const IMAG: Self = Scalar::Rational(RationalComplex::I);
 
     fn float(&self) -> FloatComplex {
         match self {

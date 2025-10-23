@@ -17,4 +17,5 @@ pub enum MathError {
     NotColumnVector,
     NoIdentityMatrix,
     ZeroSizeMatrix,
+    WrongNumberOfArgs,
 }
