@@ -1,4 +1,4 @@
-use crate::{Value, errors::*, linalg::Matrix, scalar::Scalar};
+use crate::{Value, errors::*, linalg::ConcreteMatrix, scalar::Scalar};
 
 pub enum Nilary {
     Integer(i128),
@@ -14,7 +14,7 @@ impl Nilary {
             Nilary::ImaginaryUnit => Ok(Value::Scalar(Scalar::IMAG)),
             &Nilary::Identity { size } => {
                 if let Some(size) = size {
-                    Matrix::identity(size).map(Value::Matrix)
+                    ConcreteMatrix::identity(size).map(Value::Matrix)
                 } else {
                     todo!()
                 }
@@ -89,7 +89,7 @@ impl Variadic {
     pub fn eval(&self, args: &[Value]) -> Result<Value> {
         match *self {
             Variadic::MatrixCtor { width, height } => {
-                Matrix::from_size_slice_rowmaj(width, height, args).map(Value::Matrix)
+                ConcreteMatrix::from_size_slice_rowmaj(width, height, args).map(Value::Matrix)
             }
         }
     }

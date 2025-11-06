@@ -18,4 +18,5 @@ pub enum MathError {
     NoIdentityMatrix,
     ZeroSizeMatrix,
     WrongNumberOfArgs,
+    UnsupportedMatrixOp,
 }

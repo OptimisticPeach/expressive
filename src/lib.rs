@@ -1,10 +1,10 @@
 mod errors;
 mod function;
-mod linalg;
+mod matrix;
 mod scalar;
 
 use errors::Result;
-use linalg::Matrix;
+use matrix::Matrix;
 use scalar::Scalar;
 
 trait Floatify {
@@ -31,6 +31,9 @@ impl Floatify for Value {
 }
 
 impl Value {
+    pub const ONE: Self = Value::Scalar(Scalar::ONE);
+    pub const ZERO: Self = Value::Scalar(Scalar::ZERO);
+
     pub fn add(&self, rhs: &Value) -> Result<Value> {
         match (self, rhs) {
             (Value::Scalar(_), Value::Matrix(_)) | (Value::Matrix(_), Value::Scalar(_)) => {
