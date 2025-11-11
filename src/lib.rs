@@ -13,7 +13,7 @@ trait Floatify {
     fn floatify(self) -> Self::Floated;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Scalar(Scalar),
     Matrix(Matrix),

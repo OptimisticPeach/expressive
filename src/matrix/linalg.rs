@@ -14,9 +14,9 @@ use super::Value;
 /// [ 0 3 6 ]
 /// [ 1 4 7 ]
 /// [ 2 5 8 ]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ConcreteMatrix {
-    elems: Vec<Value>,
+    pub(crate) elems: Vec<Value>,
     pub width: usize,
     pub height: usize,
 }
@@ -151,6 +151,10 @@ impl ConcreteMatrix {
     pub fn det(&self) -> Result<Value> {
         if self.width != self.height {
             return Err(crate::errors::MathError::NonSquareDeterminant);
+        }
+
+        if self.width == 0 {
+            return Err(crate::errors::MathError::EmptyMatrix);
         }
 
         if self.width == 1 {
@@ -346,7 +350,7 @@ impl ConcreteMatrix {
 
     pub fn mul(&self, rhs: &Self) -> Result<Self> {
         if self.width != rhs.height {
-            return Err(crate::errors::MathError::MatrixMultShapeMismatch);
+            return Err(crate::errors::MathError::MatrixShapeMismatch);
         }
 
         let mut this = Self {
@@ -377,7 +381,7 @@ impl ConcreteMatrix {
         mut op: impl FnMut(&Value, &Value) -> Result<Value>,
     ) -> Result<Self> {
         if self.width != rhs.width || self.height != rhs.height {
-            return Err(crate::errors::MathError::MatrixHadamardMismatch);
+            return Err(crate::errors::MathError::MatrixShapeMismatch);
         }
 
         Ok(Self {

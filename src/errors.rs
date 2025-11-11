@@ -4,10 +4,8 @@ pub enum MathError {
     NonSquareDeterminant,
     MatrixOutOfRange,
     AugmentShapeMismatch,
-    MatrixMultShapeMismatch,
+    MatrixShapeMismatch,
     EmptyMatrix,
-    MatrixAddShapeMismatch,
-    MatrixHadamardMismatch,
     AddScalarMatrix,
     DivideByZero,
     MatrixNotSquare,
@@ -19,4 +17,5 @@ pub enum MathError {
     ZeroSizeMatrix,
     WrongNumberOfArgs,
     UnsupportedMatrixOp,
+    CannotDeduceDimensions,
 }

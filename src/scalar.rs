@@ -27,7 +27,7 @@ impl Floatify for RationalComplex {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Scalar {
     Rational(RationalComplex),
     Float(FloatComplex),
