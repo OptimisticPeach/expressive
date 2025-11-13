@@ -3,7 +3,6 @@ pub mod linalg;
 use crate::{
     Floatify, Value,
     errors::{MathError, Result},
-    scalar::Scalar,
 };
 use linalg::ConcreteMatrix;
 
@@ -898,8 +897,19 @@ impl Matrix {
         }
     }
 
-    // looks like a later-me problem.
-    // pub fn is_zero(&self) -> bool {}
+    pub fn is_zero(&self) -> bool {
+        if let Matrix::Identity { scale, .. } = self {
+            match scale {
+                None => return false,
+                Some(x) => {
+                    if !x.is_zero() {
+                        return false;
+                    }
+                }
+            }
+        }
+        self.best_guess().is_zero()
+    }
 
     pub fn transpose(&self) -> Self {
         match self {

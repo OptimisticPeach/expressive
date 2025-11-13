@@ -875,7 +875,7 @@ impl ConcreteMatrix {
             return Err(crate::errors::MathError::NotColumnVector);
         }
 
-        let star = self.conj()?.transpose()?;
+        let star = self.conj()?.transpose();
 
         let numerator = self.mul(&star)?;
 

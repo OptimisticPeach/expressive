@@ -101,7 +101,7 @@ impl Value {
     pub fn identity(&self) -> Result<Value> {
         match self {
             Value::Scalar(_) => Ok(Value::Scalar(Scalar::ONE)),
-            Value::Matrix(x) => x.my_identity().map(Value::Matrix),
+            Value::Matrix(_) => Ok(Value::Matrix(Matrix::identity(None)?)),
         }
     }
 
@@ -130,10 +130,10 @@ impl Value {
         }
     }
 
-    pub fn transpose(&self) -> Result<Value> {
+    pub fn transpose(&self) -> Value {
         match self {
-            Self::Matrix(x) => x.transpose().map(Self::Matrix),
-            x @ Self::Scalar(_) => Ok(x.clone()),
+            Self::Matrix(x) => Self::Matrix(x.transpose()),
+            x @ Self::Scalar(_) => x.clone(),
         }
     }
 

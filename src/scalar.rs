@@ -1,5 +1,5 @@
 use crate::{Floatify, errors::Result};
-use num_complex::{Complex, ComplexFloat};
+use num_complex::Complex;
 use num_rational::Ratio;
 use num_traits::ToPrimitive;
 
