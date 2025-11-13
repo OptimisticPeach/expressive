@@ -55,14 +55,14 @@ pub enum Matrix {
     /// The dimensions, w, h, of this matrix are:
     /// - w = concrete.w
     /// - h >= concrete.h
-    UnboundedRows(ConcreteMatrix),
+    UnboundedHeight(ConcreteMatrix),
 
     /// Matrix with a known number of rows.
     ///
     /// The dimensions, w, h, of this matrix are:
     /// - w >= concrete.w
     /// - h = concrete.h
-    UnboundedCols(ConcreteMatrix),
+    UnboundedWidth(ConcreteMatrix),
 
     /// Matrix whose size is unbounded.
     ///
@@ -72,25 +72,14 @@ pub enum Matrix {
     UnboundedSize(ConcreteMatrix),
 }
 
-fn apply_or<T, U: std::ops::Deref<Target = V>, V, E>(
-    lhs: std::result::Result<T, E>,
-    rhs: Option<U>,
-    f: impl FnOnce(&T, &V) -> std::result::Result<T, E>,
-) -> std::result::Result<T, E> {
-    match rhs {
-        None => lhs,
-        Some(x) => f(&lhs?, &x),
-    }
-}
-
 impl Floatify for Matrix {
     type Floated = Self;
 
     fn floatify(mut self) -> Self::Floated {
         match self {
             Matrix::Concrete(ref mut concrete)
-            | Matrix::UnboundedRows(ref mut concrete)
-            | Matrix::UnboundedCols(ref mut concrete)
+            | Matrix::UnboundedHeight(ref mut concrete)
+            | Matrix::UnboundedWidth(ref mut concrete)
             | Matrix::UnboundedSize(ref mut concrete) => {
                 let mut temp = ConcreteMatrix::EMPTY;
                 std::mem::swap(&mut temp, concrete);
@@ -118,16 +107,18 @@ impl Matrix {
         match self {
             Matrix::Concrete(concrete) => concrete.remove_col(col).map(Matrix::Concrete),
 
-            Matrix::UnboundedRows(concrete) => concrete.remove_col(col).map(Matrix::UnboundedRows),
+            Matrix::UnboundedHeight(concrete) => {
+                concrete.remove_col(col).map(Matrix::UnboundedHeight)
+            }
 
-            Matrix::UnboundedCols(concrete) => {
+            Matrix::UnboundedWidth(concrete) => {
                 let result = if col >= concrete.width {
                     Ok(concrete.clone())
                 } else {
                     concrete.remove_col(col)
                 };
 
-                result.map(Matrix::UnboundedRows)
+                result.map(Matrix::UnboundedHeight)
             }
 
             Matrix::UnboundedSize(concrete) => {
@@ -148,17 +139,19 @@ impl Matrix {
         match self {
             Matrix::Concrete(concrete) => concrete.remove_row(row).map(Matrix::Concrete),
 
-            Matrix::UnboundedRows(concrete) => {
+            Matrix::UnboundedHeight(concrete) => {
                 let result = if row >= concrete.height {
                     Ok(concrete.clone())
                 } else {
                     concrete.remove_row(row)
                 };
 
-                result.map(Matrix::UnboundedRows)
+                result.map(Matrix::UnboundedHeight)
             }
 
-            Matrix::UnboundedCols(concrete) => concrete.remove_row(row).map(Matrix::UnboundedRows),
+            Matrix::UnboundedWidth(concrete) => {
+                concrete.remove_row(row).map(Matrix::UnboundedHeight)
+            }
 
             Matrix::UnboundedSize(concrete) => {
                 let result = if row >= concrete.height {
@@ -180,19 +173,23 @@ impl Matrix {
                 .remove_col_row(col, row)
                 .map(Matrix::Concrete),
 
-            Matrix::UnboundedRows(concrete) => {
+            Matrix::UnboundedHeight(concrete) => {
                 if row >= concrete.height {
-                    concrete.remove_col(col).map(Matrix::UnboundedRows)
+                    concrete.remove_col(col).map(Matrix::UnboundedHeight)
                 } else {
-                    concrete.remove_col_row(col, row).map(Matrix::UnboundedRows)
+                    concrete
+                        .remove_col_row(col, row)
+                        .map(Matrix::UnboundedHeight)
                 }
             }
 
-            Matrix::UnboundedCols(concrete) => {
+            Matrix::UnboundedWidth(concrete) => {
                 if col >= concrete.width {
-                    concrete.remove_row(row).map(Matrix::UnboundedCols)
+                    concrete.remove_row(row).map(Matrix::UnboundedWidth)
                 } else {
-                    concrete.remove_col_row(col, row).map(Matrix::UnboundedCols)
+                    concrete
+                        .remove_col_row(col, row)
+                        .map(Matrix::UnboundedWidth)
                 }
             }
 
@@ -220,10 +217,10 @@ impl Matrix {
 
     fn concrete_rows(&self, height: usize) -> Option<Self> {
         let result = match self.extend_rows(height)? {
-            x @ Matrix::UnboundedCols(_) => x,
-            Matrix::UnboundedSize(concrete_matrix) => Matrix::UnboundedCols(concrete_matrix),
+            x @ Matrix::UnboundedWidth(_) => x,
+            Matrix::UnboundedSize(concrete_matrix) => Matrix::UnboundedWidth(concrete_matrix),
 
-            x @ (Matrix::Concrete(_) | Matrix::Identity { .. } | Matrix::UnboundedRows(_)) => {
+            x @ (Matrix::Concrete(_) | Matrix::Identity { .. } | Matrix::UnboundedHeight(_)) => {
                 Self::Concrete(x.unwrap_best_guess())
             }
         };
@@ -233,10 +230,10 @@ impl Matrix {
 
     fn concrete_cols(&self, width: usize) -> Option<Self> {
         let result = match self.extend_cols(width)? {
-            x @ Matrix::UnboundedRows(_) => x,
-            Matrix::UnboundedSize(concrete_matrix) => Matrix::UnboundedRows(concrete_matrix),
+            x @ Matrix::UnboundedHeight(_) => x,
+            Matrix::UnboundedSize(concrete_matrix) => Matrix::UnboundedHeight(concrete_matrix),
 
-            x @ (Matrix::Concrete(_) | Matrix::Identity { .. } | Matrix::UnboundedCols(_)) => {
+            x @ (Matrix::Concrete(_) | Matrix::Identity { .. } | Matrix::UnboundedWidth(_)) => {
                 Self::Concrete(x.unwrap_best_guess())
             }
         };
@@ -265,7 +262,7 @@ impl Matrix {
         match self {
             // can't.
             Matrix::Concrete(_) => None,
-            Matrix::UnboundedCols(_) => None,
+            Matrix::UnboundedWidth(_) => None,
 
             Matrix::Identity { concrete, scale } => {
                 let delta = height - concrete.height;
@@ -283,7 +280,7 @@ impl Matrix {
                     scale: scale.clone(),
                 })
             }
-            Matrix::UnboundedRows(concrete_matrix) => Some(Matrix::UnboundedRows(
+            Matrix::UnboundedHeight(concrete_matrix) => Some(Matrix::UnboundedHeight(
                 concrete_matrix.ext_vert(&Value::ZERO, height - concrete_matrix.height),
             )),
 
@@ -309,7 +306,7 @@ impl Matrix {
         match self {
             // can't.
             Matrix::Concrete(_) => None,
-            Matrix::UnboundedRows(_) => None,
+            Matrix::UnboundedHeight(_) => None,
 
             Matrix::Identity { concrete, scale } => {
                 let delta = width - concrete.width;
@@ -327,7 +324,7 @@ impl Matrix {
                     scale: scale.clone(),
                 })
             }
-            Matrix::UnboundedCols(concrete_matrix) => Some(Matrix::UnboundedCols(
+            Matrix::UnboundedWidth(concrete_matrix) => Some(Matrix::UnboundedWidth(
                 concrete_matrix.ext_hor(&Value::ZERO, width - concrete_matrix.width),
             )),
 
@@ -360,8 +357,8 @@ impl Matrix {
         match self {
             // can't.
             Matrix::Concrete(_) => None,
-            Matrix::UnboundedRows(_) => None,
-            Matrix::UnboundedCols(_) => None,
+            Matrix::UnboundedHeight(_) => None,
+            Matrix::UnboundedWidth(_) => None,
 
             Matrix::Identity { concrete, scale } => {
                 if height != width {
@@ -415,13 +412,13 @@ impl Matrix {
                 if col >= concrete.width {
                     Self::vector_basis_elem(col, scale.clone().map(|x| *x).unwrap_or(Value::ZERO))
                 } else {
-                    concrete.get_col(col).map(Self::UnboundedRows)
+                    concrete.get_col(col).map(Self::UnboundedHeight)
                 }
             }
-            Matrix::UnboundedRows(concrete_matrix) => {
-                concrete_matrix.get_col(col).map(Self::UnboundedRows)
+            Matrix::UnboundedHeight(concrete_matrix) => {
+                concrete_matrix.get_col(col).map(Self::UnboundedHeight)
             }
-            Matrix::UnboundedCols(concrete_matrix) => {
+            Matrix::UnboundedWidth(concrete_matrix) => {
                 if col > concrete_matrix.width {
                     Ok(Self::Concrete(ConcreteMatrix::col_from_iter(
                         std::iter::repeat_n(Value::ZERO, concrete_matrix.height),
@@ -432,11 +429,11 @@ impl Matrix {
             }
             Matrix::UnboundedSize(concrete_matrix) => {
                 if col > concrete_matrix.width {
-                    Ok(Self::UnboundedRows(ConcreteMatrix::col_from_iter(
+                    Ok(Self::UnboundedHeight(ConcreteMatrix::col_from_iter(
                         std::iter::repeat_n(Value::ZERO, concrete_matrix.height),
                     )))
                 } else {
-                    concrete_matrix.get_col(col).map(Self::UnboundedRows)
+                    concrete_matrix.get_col(col).map(Self::UnboundedHeight)
                 }
             }
         }
@@ -452,10 +449,10 @@ impl Matrix {
                         scale.clone().map(|x| *x).unwrap_or(Value::ZERO),
                     )
                 } else {
-                    concrete.get_row(row).map(Self::UnboundedCols)
+                    concrete.get_row(row).map(Self::UnboundedWidth)
                 }
             }
-            Matrix::UnboundedRows(concrete_matrix) => {
+            Matrix::UnboundedHeight(concrete_matrix) => {
                 if row > concrete_matrix.height {
                     Ok(Self::Concrete(ConcreteMatrix::col_from_iter(
                         std::iter::repeat_n(Value::ZERO, concrete_matrix.width),
@@ -464,35 +461,35 @@ impl Matrix {
                     concrete_matrix.get_row(row).map(Self::Concrete)
                 }
             }
-            Matrix::UnboundedCols(concrete_matrix) => {
-                concrete_matrix.get_row(row).map(Self::UnboundedCols)
+            Matrix::UnboundedWidth(concrete_matrix) => {
+                concrete_matrix.get_row(row).map(Self::UnboundedWidth)
             }
             Matrix::UnboundedSize(concrete_matrix) => {
                 if row > concrete_matrix.height {
-                    Ok(Self::UnboundedRows(ConcreteMatrix::row_from_iter(
+                    Ok(Self::UnboundedHeight(ConcreteMatrix::row_from_iter(
                         std::iter::repeat_n(Value::ZERO, concrete_matrix.width),
                     )))
                 } else {
-                    concrete_matrix.get_row(row).map(Self::UnboundedCols)
+                    concrete_matrix.get_row(row).map(Self::UnboundedWidth)
                 }
             }
         }
     }
 
     fn is_concrete_width(&self) -> bool {
-        matches!(self, Matrix::Concrete(_) | Matrix::UnboundedRows(_))
+        matches!(self, Matrix::Concrete(_) | Matrix::UnboundedHeight(_))
     }
 
     fn is_concrete_height(&self) -> bool {
-        matches!(self, Matrix::Concrete(_) | Matrix::UnboundedCols(_))
+        matches!(self, Matrix::Concrete(_) | Matrix::UnboundedWidth(_))
     }
 
     fn best_guess(&self) -> &ConcreteMatrix {
         match self {
             Matrix::Concrete(concrete_matrix) => concrete_matrix,
             Matrix::Identity { concrete, .. } => concrete,
-            Matrix::UnboundedRows(concrete_matrix) => concrete_matrix,
-            Matrix::UnboundedCols(concrete_matrix) => concrete_matrix,
+            Matrix::UnboundedHeight(concrete_matrix) => concrete_matrix,
+            Matrix::UnboundedWidth(concrete_matrix) => concrete_matrix,
             Matrix::UnboundedSize(concrete_matrix) => concrete_matrix,
         }
     }
@@ -501,8 +498,8 @@ impl Matrix {
         match self {
             Matrix::Concrete(concrete_matrix) => concrete_matrix,
             Matrix::Identity { concrete, .. } => concrete,
-            Matrix::UnboundedRows(concrete_matrix) => concrete_matrix,
-            Matrix::UnboundedCols(concrete_matrix) => concrete_matrix,
+            Matrix::UnboundedHeight(concrete_matrix) => concrete_matrix,
+            Matrix::UnboundedWidth(concrete_matrix) => concrete_matrix,
             Matrix::UnboundedSize(concrete_matrix) => concrete_matrix,
         }
     }
@@ -528,7 +525,7 @@ impl Matrix {
             if reshaped.is_concrete_height() {
                 return Ok(Matrix::Concrete(result));
             } else {
-                return Ok(Matrix::UnboundedRows(result));
+                return Ok(Matrix::UnboundedHeight(result));
             }
         }
 
@@ -542,7 +539,7 @@ impl Matrix {
             if bottom.is_concrete_height() || matches!(bottom, Matrix::Identity { .. }) {
                 return Ok(Matrix::Concrete(result));
             } else {
-                return Ok(Matrix::UnboundedRows(result));
+                return Ok(Matrix::UnboundedHeight(result));
             }
         }
 
@@ -571,7 +568,7 @@ impl Matrix {
         }
 
         if concrete_height {
-            result.map(Matrix::UnboundedCols)
+            result.map(Matrix::UnboundedWidth)
         } else {
             result.map(Matrix::UnboundedSize)
         }
@@ -588,7 +585,7 @@ impl Matrix {
             if reshaped.is_concrete_width() {
                 return Ok(Matrix::Concrete(result));
             } else {
-                return Ok(Matrix::UnboundedRows(result));
+                return Ok(Matrix::UnboundedHeight(result));
             }
         }
 
@@ -602,7 +599,7 @@ impl Matrix {
             if right.is_concrete_width() || matches!(right, Matrix::Identity { .. }) {
                 return Ok(Matrix::Concrete(result));
             } else {
-                return Ok(Matrix::UnboundedRows(result));
+                return Ok(Matrix::UnboundedHeight(result));
             }
         }
 
@@ -629,7 +626,7 @@ impl Matrix {
         }
 
         if concrete_width {
-            result.map(Matrix::UnboundedRows)
+            result.map(Matrix::UnboundedHeight)
         } else {
             result.map(Matrix::UnboundedSize)
         }
@@ -650,18 +647,20 @@ impl Matrix {
 
         let result = match (lhs, rhs) {
             (Matrix::Concrete(_), Matrix::Concrete(_)) => Matrix::Concrete(result),
-            (Matrix::Concrete(_), Matrix::UnboundedCols(_)) => Matrix::UnboundedCols(result),
-            (Matrix::UnboundedRows(_), Matrix::Concrete(_)) => Matrix::UnboundedRows(result),
-            (Matrix::UnboundedRows(_), Matrix::UnboundedCols(_)) => Matrix::UnboundedSize(result),
+            (Matrix::Concrete(_), Matrix::UnboundedWidth(_)) => Matrix::UnboundedWidth(result),
+            (Matrix::UnboundedHeight(_), Matrix::Concrete(_)) => Matrix::UnboundedHeight(result),
+            (Matrix::UnboundedHeight(_), Matrix::UnboundedWidth(_)) => {
+                Matrix::UnboundedSize(result)
+            }
 
             // doing concrete_rows/cols will always turn an Identity into a Concrete
             (Matrix::Identity { .. }, _) | (_, Matrix::Identity { .. }) => unreachable!(),
 
             // we just picked the number of columns for lhs
-            (Matrix::UnboundedCols(_) | Matrix::UnboundedSize(_), _) => unreachable!(),
+            (Matrix::UnboundedWidth(_) | Matrix::UnboundedSize(_), _) => unreachable!(),
 
             // we just picked the number of rows for rhs
-            (_, Matrix::UnboundedRows(_) | Matrix::UnboundedSize(_)) => unreachable!(),
+            (_, Matrix::UnboundedHeight(_) | Matrix::UnboundedSize(_)) => unreachable!(),
         };
 
         Ok(result)
@@ -680,11 +679,11 @@ impl Matrix {
                     .transpose()?
                     .map(Box::new),
             }),
-            Matrix::UnboundedRows(concrete_matrix) => {
-                concrete_matrix.scalar_mul(rhs).map(Matrix::UnboundedRows)
+            Matrix::UnboundedHeight(concrete_matrix) => {
+                concrete_matrix.scalar_mul(rhs).map(Matrix::UnboundedHeight)
             }
-            Matrix::UnboundedCols(concrete_matrix) => {
-                concrete_matrix.scalar_mul(rhs).map(Matrix::UnboundedCols)
+            Matrix::UnboundedWidth(concrete_matrix) => {
+                concrete_matrix.scalar_mul(rhs).map(Matrix::UnboundedWidth)
             }
             Matrix::UnboundedSize(concrete_matrix) => {
                 concrete_matrix.scalar_mul(rhs).map(Matrix::UnboundedSize)
@@ -774,10 +773,10 @@ impl Matrix {
                 if self.is_concrete_height() || rhs.is_concrete_height() {
                     Matrix::Concrete(matrix_result)
                 } else {
-                    Matrix::UnboundedRows(matrix_result)
+                    Matrix::UnboundedHeight(matrix_result)
                 }
             } else if self.is_concrete_height() || rhs.is_concrete_height() {
-                Matrix::UnboundedCols(matrix_result)
+                Matrix::UnboundedWidth(matrix_result)
             } else {
                 Matrix::UnboundedSize(matrix_result)
             };
@@ -800,11 +799,11 @@ impl Matrix {
     pub fn neg(&self) -> Result<Self> {
         match self {
             Matrix::Concrete(concrete_matrix) => concrete_matrix.neg().map(Matrix::Concrete),
-            Matrix::UnboundedRows(concrete_matrix) => {
-                concrete_matrix.neg().map(Matrix::UnboundedRows)
+            Matrix::UnboundedHeight(concrete_matrix) => {
+                concrete_matrix.neg().map(Matrix::UnboundedHeight)
             }
-            Matrix::UnboundedCols(concrete_matrix) => {
-                concrete_matrix.neg().map(Matrix::UnboundedCols)
+            Matrix::UnboundedWidth(concrete_matrix) => {
+                concrete_matrix.neg().map(Matrix::UnboundedWidth)
             }
             Matrix::UnboundedSize(concrete_matrix) => {
                 concrete_matrix.neg().map(Matrix::UnboundedSize)
@@ -847,7 +846,7 @@ impl Matrix {
 
         *elems.last_mut().ok_or(MathError::EmptyMatrix)? = one;
 
-        Ok(Self::UnboundedRows(ConcreteMatrix {
+        Ok(Self::UnboundedHeight(ConcreteMatrix {
             elems,
             width: 1,
             height: row,
@@ -859,7 +858,7 @@ impl Matrix {
 
         *elems.last_mut().ok_or(MathError::EmptyMatrix)? = one;
 
-        Ok(Self::UnboundedCols(ConcreteMatrix {
+        Ok(Self::UnboundedWidth(ConcreteMatrix {
             elems,
             width: col,
             height: 1,
@@ -872,7 +871,7 @@ impl Matrix {
 
         *elems.last_mut().ok_or(MathError::EmptyMatrix)? = one.unwrap_or(Value::ONE);
 
-        Ok(Self::UnboundedCols(ConcreteMatrix {
+        Ok(Self::UnboundedWidth(ConcreteMatrix {
             elems,
             width: col,
             height: row,
@@ -918,11 +917,11 @@ impl Matrix {
                 concrete: concrete.transpose(),
                 scale: scale.clone(),
             },
-            Matrix::UnboundedRows(concrete_matrix) => {
-                Matrix::UnboundedCols(concrete_matrix.transpose())
+            Matrix::UnboundedHeight(concrete_matrix) => {
+                Matrix::UnboundedWidth(concrete_matrix.transpose())
             }
-            Matrix::UnboundedCols(concrete_matrix) => {
-                Matrix::UnboundedRows(concrete_matrix.transpose())
+            Matrix::UnboundedWidth(concrete_matrix) => {
+                Matrix::UnboundedHeight(concrete_matrix.transpose())
             }
             Matrix::UnboundedSize(concrete_matrix) => {
                 Matrix::UnboundedSize(concrete_matrix.transpose())
@@ -937,11 +936,11 @@ impl Matrix {
                 concrete: concrete.conj()?,
                 scale: scale.as_ref().map(|x| x.conj().map(Box::new)).transpose()?,
             }),
-            Matrix::UnboundedRows(concrete_matrix) => {
-                concrete_matrix.conj().map(Matrix::UnboundedRows)
+            Matrix::UnboundedHeight(concrete_matrix) => {
+                concrete_matrix.conj().map(Matrix::UnboundedHeight)
             }
-            Matrix::UnboundedCols(concrete_matrix) => {
-                concrete_matrix.conj().map(Matrix::UnboundedCols)
+            Matrix::UnboundedWidth(concrete_matrix) => {
+                concrete_matrix.conj().map(Matrix::UnboundedWidth)
             }
             Matrix::UnboundedSize(concrete_matrix) => {
                 concrete_matrix.conj().map(Matrix::UnboundedSize)
