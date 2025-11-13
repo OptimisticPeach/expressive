@@ -409,30 +409,6 @@ impl Matrix {
         result.det()
     }
 
-    pub fn vector_basis_elem(row: usize, one: Value) -> Result<Self> {
-        let mut elems = vec![Value::ZERO; row];
-
-        *elems.last_mut().ok_or(MathError::EmptyMatrix)? = one;
-
-        Ok(Self::UnboundedRows(ConcreteMatrix {
-            elems,
-            width: 1,
-            height: row,
-        }))
-    }
-
-    pub fn transpose_basis_elem(col: usize, one: Value) -> Result<Self> {
-        let mut elems = vec![Value::ZERO; col];
-
-        *elems.last_mut().ok_or(MathError::EmptyMatrix)? = one;
-
-        Ok(Self::UnboundedCols(ConcreteMatrix {
-            elems,
-            width: col,
-            height: 1,
-        }))
-    }
-
     pub fn get_col(&self, col: usize) -> Result<Self> {
         match self {
             Matrix::Concrete(concrete_matrix) => concrete_matrix.get_col(col).map(Self::Concrete),
@@ -774,17 +750,23 @@ impl Matrix {
                     },
                 ) = (self, rhs)
                 {
-                    let mut scale = id_op(
+                    let scale = id_op(
                         scale_me.as_deref().unwrap_or(&Value::ONE),
                         scale_rh.as_deref().unwrap_or(&Value::ONE),
                     )?;
-                    if scale == Some(Value::ONE) {
-                        scale = None;
-                    }
 
-                    Matrix::Identity {
-                        concrete: matrix_result,
-                        scale: scale.map(Box::new),
+                    if scale == Value::ONE {
+                        Matrix::Identity {
+                            concrete: matrix_result,
+                            scale: None,
+                        }
+                    } else if scale == Value::ZERO {
+                        Matrix::UnboundedSize(matrix_result)
+                    } else {
+                        Matrix::Identity {
+                            concrete: matrix_result,
+                            scale: Some(Box::new(scale)),
+                        }
                     }
                 } else {
                     Matrix::Concrete(matrix_result)
@@ -845,51 +827,217 @@ impl Matrix {
     }
 
     #[doc(alias = "rref")]
-    pub fn row_echelon_form(&self, reduced: bool) -> Result<Self> {}
+    pub fn row_echelon_form(&self, reduced: bool) -> Result<Self> {
+        self.best_guess()
+            .row_echelon_form(reduced)
+            .map(Self::Concrete)
+    }
 
-    pub fn identity(width: usize) -> Result<Self> {}
+    pub fn identity(dimension: Option<usize>) -> Result<Self> {
+        match dimension {
+            None => Ok(Self::Identity {
+                concrete: ConcreteMatrix::EMPTY,
+                scale: None,
+            }),
+            Some(width) => ConcreteMatrix::identity(width).map(Self::Concrete),
+        }
+    }
 
-    pub fn my_identity(&self) -> Result<Self> {}
+    pub fn vector_basis_elem(row: usize, one: Value) -> Result<Self> {
+        let mut elems = vec![Value::ZERO; row];
 
-    pub fn col_from_iter(iter: impl IntoIterator<Item = Value>) -> Self {}
+        *elems.last_mut().ok_or(MathError::EmptyMatrix)? = one;
 
-    pub fn row_from_iter(iter: impl IntoIterator<Item = Value>) -> Self {}
+        Ok(Self::UnboundedRows(ConcreteMatrix {
+            elems,
+            width: 1,
+            height: row,
+        }))
+    }
 
-    pub fn my_basis_elem(&self, elem: usize) -> Result<Self> {}
+    pub fn transpose_basis_elem(col: usize, one: Value) -> Result<Self> {
+        let mut elems = vec![Value::ZERO; col];
 
-    pub fn zero_matrix(&self) -> Self {}
+        *elems.last_mut().ok_or(MathError::EmptyMatrix)? = one;
 
-    pub fn invert(&self) -> Result<Self> {}
+        Ok(Self::UnboundedCols(ConcreteMatrix {
+            elems,
+            width: col,
+            height: 1,
+        }))
+    }
 
-    pub fn is_zero(&self) -> bool {}
+    pub fn matrix_basis_elem(col: usize, row: usize, one: Option<Value>) -> Result<Self> {
+        // the 1 will always be in the last place
+        let mut elems = vec![Value::ZERO; col * row];
 
-    pub fn transpose(&self) -> Result<Self> {}
+        *elems.last_mut().ok_or(MathError::EmptyMatrix)? = one.unwrap_or(Value::ONE);
 
-    pub fn conj(&self) -> Result<Self> {}
+        Ok(Self::UnboundedCols(ConcreteMatrix {
+            elems,
+            width: col,
+            height: row,
+        }))
+    }
 
-    pub fn norm_sq(&self) -> Result<Value> {}
+    pub fn zero_matrix(&self) -> Self {
+        Matrix::UnboundedSize(ConcreteMatrix::EMPTY)
+    }
 
-    pub fn sin(&self) -> Result<Self> {}
+    pub fn invert(&self) -> Result<Self> {
+        match self {
+            Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
+                concrete: concrete.invert()?,
+                scale: scale
+                    .as_ref()
+                    .map(|x| x.invert().map(Box::new))
+                    .transpose()?,
+            }),
 
-    pub fn cos(&self) -> Result<Self> {}
+            _ => self.best_guess().invert().map(Self::Concrete),
+        }
+    }
 
-    pub fn tan(&self) -> Result<Self> {}
+    // looks like a later-me problem.
+    // pub fn is_zero(&self) -> bool {}
 
-    pub fn sinh(&self) -> Result<Self> {}
+    pub fn transpose(&self) -> Self {
+        match self {
+            Matrix::Concrete(concrete_matrix) => Self::Concrete(concrete_matrix.transpose()),
+            Matrix::Identity { concrete, scale } => Matrix::Identity {
+                concrete: concrete.transpose(),
+                scale: scale.clone(),
+            },
+            Matrix::UnboundedRows(concrete_matrix) => {
+                Matrix::UnboundedCols(concrete_matrix.transpose())
+            }
+            Matrix::UnboundedCols(concrete_matrix) => {
+                Matrix::UnboundedRows(concrete_matrix.transpose())
+            }
+            Matrix::UnboundedSize(concrete_matrix) => {
+                Matrix::UnboundedSize(concrete_matrix.transpose())
+            }
+        }
+    }
 
-    pub fn cosh(&self) -> Result<Self> {}
+    pub fn conj(&self) -> Result<Self> {
+        match self {
+            Matrix::Concrete(concrete_matrix) => concrete_matrix.conj().map(Self::Concrete),
+            Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
+                concrete: concrete.conj()?,
+                scale: scale.as_ref().map(|x| x.conj().map(Box::new)).transpose()?,
+            }),
+            Matrix::UnboundedRows(concrete_matrix) => {
+                concrete_matrix.conj().map(Matrix::UnboundedRows)
+            }
+            Matrix::UnboundedCols(concrete_matrix) => {
+                concrete_matrix.conj().map(Matrix::UnboundedCols)
+            }
+            Matrix::UnboundedSize(concrete_matrix) => {
+                concrete_matrix.conj().map(Matrix::UnboundedSize)
+            }
+        }
+    }
 
-    pub fn tanh(&self) -> Result<Self> {}
+    pub fn norm_sq(&self) -> Result<Value> {
+        match self {
+            Matrix::Identity { concrete, scale } => {
+                if concrete.width == 0 {
+                    Ok(scale.as_ref().map(|x| (&**x).clone()).unwrap_or(Value::ONE))
+                } else {
+                    concrete.norm_sq()
+                }
+            }
 
-    // Matrix exponentiation through Sylvester's Formula
-    fn exp_inner(&self, eigenvalues: &[(Scalar, usize)]) -> Result<Self> {}
+            _ => self.best_guess().norm_sq(),
+        }
+    }
+
+    pub fn sin(&self) -> Result<Self> {
+        match self {
+            Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
+                concrete: concrete.sin()?,
+                scale: scale.as_ref().map(|x| x.sin().map(Box::new)).transpose()?,
+            }),
+
+            _ => self.best_guess().sin().map(Self::Concrete),
+        }
+    }
+
+    pub fn cos(&self) -> Result<Self> {
+        match self {
+            Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
+                concrete: concrete.cos()?,
+                scale: scale.as_ref().map(|x| x.cos().map(Box::new)).transpose()?,
+            }),
+
+            _ => self.best_guess().cos().map(Self::Concrete),
+        }
+    }
+
+    pub fn tan(&self) -> Result<Self> {
+        match self {
+            Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
+                concrete: concrete.tan()?,
+                scale: scale.as_ref().map(|x| x.tan().map(Box::new)).transpose()?,
+            }),
+
+            _ => self.best_guess().tan().map(Self::Concrete),
+        }
+    }
+
+    pub fn sinh(&self) -> Result<Self> {
+        match self {
+            Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
+                concrete: concrete.sinh()?,
+                scale: scale.as_ref().map(|x| x.sinh().map(Box::new)).transpose()?,
+            }),
+
+            _ => self.best_guess().sinh().map(Self::Concrete),
+        }
+    }
+
+    pub fn cosh(&self) -> Result<Self> {
+        match self {
+            Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
+                concrete: concrete.cosh()?,
+                scale: scale.as_ref().map(|x| x.cosh().map(Box::new)).transpose()?,
+            }),
+
+            _ => self.best_guess().cosh().map(Self::Concrete),
+        }
+    }
+
+    pub fn tanh(&self) -> Result<Self> {
+        match self {
+            Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
+                concrete: concrete.tanh()?,
+                scale: scale.as_ref().map(|x| x.tanh().map(Box::new)).transpose()?,
+            }),
+
+            _ => self.best_guess().tanh().map(Self::Concrete),
+        }
+    }
 
     // Householder matrix for given column vector
-    pub fn householder_matrix(&self) -> Result<Self> {}
+    pub fn householder_matrix(&self) -> Result<Self> {
+        self.best_guess().householder_matrix().map(Self::Concrete)
+    }
 
-    pub fn lower_hessenberg(&self) -> Result<Self> {}
+    pub fn lower_hessenberg(&self) -> Result<Self> {
+        self.best_guess().lower_hessenberg().map(Self::Concrete)
+    }
 
     // todo: finish a proper exp impl instead of this
     // taylor series eval
-    pub fn exp(&self) -> Result<Self> {}
+    pub fn exp(&self) -> Result<Self> {
+        match self {
+            Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
+                concrete: concrete.exp()?,
+                scale: scale.as_ref().map(|x| x.exp().map(Box::new)).transpose()?,
+            }),
+
+            _ => self.best_guess().exp().map(Self::Concrete),
+        }
+    }
 }

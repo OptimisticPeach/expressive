@@ -1,5 +1,6 @@
 pub type Result<T> = std::result::Result<T, MathError>;
 
+#[derive(Debug)]
 pub enum MathError {
     NonSquareDeterminant,
     MatrixOutOfRange,

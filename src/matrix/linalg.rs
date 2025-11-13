@@ -726,7 +726,7 @@ impl ConcreteMatrix {
         self.elems.iter().all(|x| x.is_zero())
     }
 
-    pub fn transpose(&self) -> Result<Self> {
+    pub fn transpose(&self) -> Self {
         let mut this = Self {
             elems: Vec::with_capacity(self.elems.len()),
             width: self.height,
@@ -734,10 +734,10 @@ impl ConcreteMatrix {
         };
 
         for row in 0..self.height {
-            this.elems.extend(self.iter_row(row)?.cloned());
+            this.elems.extend(self.iter_row(row).unwrap().cloned());
         }
 
-        Ok(this)
+        this
     }
 
     pub fn conj(&self) -> Result<Self> {
