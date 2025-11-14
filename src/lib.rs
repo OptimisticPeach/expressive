@@ -34,7 +34,7 @@ impl Value {
     pub const ONE: Self = Value::Scalar(Scalar::ONE);
     pub const ZERO: Self = Value::Scalar(Scalar::ZERO);
 
-    pub fn add(&self, rhs: &Value) -> Result<Value> {
+    pub fn add(self, rhs: Value) -> Result<Value> {
         match (self, rhs) {
             (Value::Scalar(_), Value::Matrix(_)) | (Value::Matrix(_), Value::Scalar(_)) => {
                 Err(errors::MathError::AddScalarMatrix)
@@ -44,7 +44,7 @@ impl Value {
         }
     }
 
-    pub fn sub(&self, rhs: &Value) -> Result<Value> {
+    pub fn sub(self, rhs: Value) -> Result<Value> {
         match (self, rhs) {
             (Value::Scalar(_), Value::Matrix(_)) | (Value::Matrix(_), Value::Scalar(_)) => {
                 Err(errors::MathError::AddScalarMatrix)
@@ -54,7 +54,7 @@ impl Value {
         }
     }
 
-    pub fn mul(&self, rhs: &Value) -> Result<Value> {
+    pub fn mul(self, rhs: Value) -> Result<Value> {
         match (self, rhs) {
             (x @ Value::Scalar(_), Value::Matrix(m)) | (Value::Matrix(m), x @ Value::Scalar(_)) => {
                 Ok(Value::Matrix(m.scalar_mul(x)?))
@@ -64,7 +64,7 @@ impl Value {
         }
     }
 
-    pub fn div(&self, rhs: &Value) -> Result<Value> {
+    pub fn div(self, rhs: Value) -> Result<Value> {
         let result = match (self, rhs) {
             (Value::Scalar(x), Value::Scalar(y)) => Value::Scalar(x.div(y)?),
             (Value::Matrix(x), Value::Scalar(y)) => {
@@ -77,7 +77,7 @@ impl Value {
         Ok(result)
     }
 
-    pub fn neg(&self) -> Result<Value> {
+    pub fn neg(self) -> Result<Value> {
         match self {
             Self::Scalar(x) => Ok(Self::Scalar(x.neg())),
             Self::Matrix(x) => x.neg().map(Self::Matrix),
@@ -91,7 +91,7 @@ impl Value {
         }
     }
 
-    pub fn invert(&self) -> Result<Value> {
+    pub fn invert(self) -> Result<Value> {
         match self {
             Self::Scalar(x) => x.invert().map(Value::Scalar),
             Self::Matrix(x) => x.invert().map(Value::Matrix),
@@ -105,41 +105,43 @@ impl Value {
         }
     }
 
-    pub fn not(&self) -> Result<Value> {
-        Value::add(&self.identity()?, &self.neg()?)
+    pub fn not(self) -> Result<Value> {
+        self.identity()?.sub(self.neg()?)
     }
 
-    pub fn and(&self, rhs: &Value) -> Result<Value> {
+    pub fn and(self, rhs: Value) -> Result<Value> {
         self.mul(rhs)
     }
 
-    pub fn or(&self, rhs: &Value) -> Result<Value> {
-        self.neg()?.and(&rhs.neg()?)?.neg()
+    pub fn or(self, rhs: Value) -> Result<Value> {
+        self.neg()?.and(rhs.neg()?)?.neg()
     }
 
-    pub fn xor(&self, rhs: &Value) -> Result<Value> {
+    pub fn xor(self, rhs: Value) -> Result<Value> {
         // xor = |a, b| { (a && !b) || (!a && b) }
         // == |a, b| { (a || b) && (!a || !b) }
-        self.or(rhs)?.and(&self.not()?.or(&rhs.not()?)?)
+        self.clone()
+            .or(rhs.clone())?
+            .and(self.not()?.or(rhs.not()?)?)
     }
 
-    pub fn conj(&self) -> Result<Value> {
+    pub fn conj(self) -> Result<Value> {
         match self {
             Self::Scalar(x) => Ok(Self::Scalar(x.conj())),
             Self::Matrix(x) => x.conj().map(Self::Matrix),
         }
     }
 
-    pub fn transpose(&self) -> Value {
+    pub fn transpose(self) -> Value {
         match self {
             Self::Matrix(x) => Self::Matrix(x.transpose()),
             x @ Self::Scalar(_) => x.clone(),
         }
     }
 
-    pub fn norm_sq(&self) -> Result<Value> {
+    pub fn norm_sq(self) -> Result<Value> {
         match self {
-            Self::Scalar(x) => Ok(Self::Scalar(x.mul(&x.conj()))),
+            Self::Scalar(x) => Ok(Self::Scalar(x.mul(x.conj()))),
             Self::Matrix(x) => x.norm_sq(),
         }
     }
@@ -148,7 +150,7 @@ impl Value {
 macro_rules! trig_ops {
     (($($both:ident),+), ($($scalar:ident),+)) => {
         $(
-            pub fn $both(&self) -> Result<Value> {
+            pub fn $both(self) -> Result<Value> {
                 match self {
                     Self::Scalar(x) => Ok(Self::Scalar(x.$both())),
                     Self::Matrix(m) => m.$both().map(Self::Matrix),
@@ -157,7 +159,7 @@ macro_rules! trig_ops {
         )+
 
         $(
-            pub fn $scalar(&self) -> Result<Value> {
+            pub fn $scalar(self) -> Result<Value> {
                 match self {
                     Self::Scalar(x) => Ok(Self::Scalar(x.$scalar())),
                     Self::Matrix(_) => Err(errors::MathError::UnsupportedMatrix),

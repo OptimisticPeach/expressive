@@ -65,6 +65,13 @@ impl ConcreteMatrix {
             .map(|(idx, val)| (idx / self.height, idx % self.height, val))
     }
 
+    pub fn into_iter(self) -> impl Iterator<Item = (usize, usize, Value)> {
+        self.elems
+            .into_iter()
+            .enumerate()
+            .map(move |(idx, val)| (idx / self.height, idx % self.height, val))
+    }
+
     pub fn iter_col(&self, col: usize) -> Result<impl Iterator<Item = &Value>> {
         if col >= self.width {
             return Err(crate::errors::MathError::MatrixOutOfRange);
@@ -81,49 +88,51 @@ impl ConcreteMatrix {
         Ok((0..self.width).map(move |x| &self[(x, row)]))
     }
 
-    pub fn remove_col(&self, col: usize) -> Result<Self> {
+    pub fn remove_col(&mut self, col: usize) -> Result<()> {
         if col >= self.width {
             return Err(crate::errors::MathError::MatrixOutOfRange);
         }
 
         let mut this = Self {
-            elems: Vec::with_capacity((self.width - 1) * self.height),
+            elems: Vec::new(),
             width: self.width - 1,
             height: self.height,
         };
 
-        this.elems.extend(
-            self.iter()
+        std::mem::swap(self, &mut this);
+
+        self.elems.extend(
+            this.into_iter()
                 .filter(|(x, _, _)| *x != col)
-                .map(|(_, _, v)| v)
-                .cloned(),
+                .map(|(_, _, v)| v),
         );
 
-        Ok(this)
+        Ok(())
     }
 
-    pub fn remove_row(&self, row: usize) -> Result<Self> {
+    pub fn remove_row(&mut self, row: usize) -> Result<()> {
         if row >= self.height {
             return Err(crate::errors::MathError::MatrixOutOfRange);
         }
 
         let mut this = Self {
-            elems: Vec::with_capacity(self.width * (self.height - 1)),
+            elems: Vec::new(),
             width: self.width,
             height: self.height - 1,
         };
 
-        this.elems.extend(
-            self.iter()
+        std::mem::swap(self, &mut this);
+
+        self.elems.extend(
+            this.into_iter()
                 .filter(|(_, y, _)| *y != row)
-                .map(|(_, _, v)| v)
-                .cloned(),
+                .map(|(_, _, v)| v),
         );
 
-        Ok(this)
+        Ok(())
     }
 
-    pub fn remove_col_row(&self, col: usize, row: usize) -> Result<Self> {
+    pub fn remove_col_row(&mut self, col: usize, row: usize) -> Result<()> {
         if col >= self.width {
             return Err(crate::errors::MathError::MatrixOutOfRange);
         }
@@ -133,60 +142,33 @@ impl ConcreteMatrix {
         }
 
         let mut this = Self {
-            elems: Vec::with_capacity((self.width - 1) * (self.height - 1)),
+            elems: Vec::new(),
             width: self.width - 1,
             height: self.height - 1,
         };
 
-        this.elems.extend(
-            self.iter()
+        std::mem::swap(self, &mut this);
+
+        self.elems.extend(
+            this.into_iter()
                 .filter(|(x, y, _)| *x != col && *y != row)
-                .map(|(_, _, v)| v)
-                .cloned(),
+                .map(|(_, _, v)| v),
         );
 
-        Ok(this)
+        Ok(())
     }
 
-    pub fn det(&self) -> Result<Value> {
+    pub fn det(self) -> Result<Value> {
         if self.width != self.height {
             return Err(crate::errors::MathError::NonSquareDeterminant);
         }
 
-        if self.width == 0 {
-            return Err(crate::errors::MathError::EmptyMatrix);
+        match &*self.elems {
+            &[] => Err(crate::errors::MathError::EmptyMatrix),
+            &[x] => Ok(x),
+            &[m11, m12, m21, m22] => m11.mul(m22)?.sub(m12.mul(m21)?),
+            _ => self.gaussian_det(),
         }
-
-        if self.width == 1 {
-            return Ok(self.elems[0].clone());
-        }
-
-        if self.width == 2 {
-            let result = self[(0, 0)]
-                .mul(&self[(1, 1)])?
-                .sub(&self[(0, 1)].mul(&self[(1, 0)])?)?;
-
-            return Ok(result);
-        }
-
-        let make_val = |i: usize| -> Result<Value> {
-            let pivot = self[(i, 0)].clone();
-            let inner = self.remove_col_row(i, 0).and_then(|x| x.det())?;
-
-            if i % 2 == 0 {
-                pivot.mul(&inner)
-            } else {
-                pivot.mul(&inner).and_then(|x| x.neg())
-            }
-        };
-
-        let mut acc = make_val(0)?;
-
-        for i in 1..self.width {
-            acc = acc.add(&make_val(i)?)?;
-        }
-
-        Ok(acc)
     }
 
     pub fn get_col(&self, col: usize) -> Result<Self> {
@@ -223,7 +205,7 @@ impl ConcreteMatrix {
         Ok(this)
     }
 
-    pub fn aug_vert(&self, bottom: &Self) -> Result<Self> {
+    pub fn aug_vert(self, bottom: Self) -> Result<Self> {
         if self.width != bottom.width {
             return Err(crate::errors::MathError::AugmentShapeMismatch);
         }
@@ -234,65 +216,66 @@ impl ConcreteMatrix {
             height: self.height + bottom.height,
         };
 
-        for col in 0..self.width {
-            this.elems
-                .extend_from_slice(&self.elems[self.height * col..(self.height + 1) * col]);
-            this.elems
-                .extend_from_slice(&bottom.elems[bottom.height * col..(bottom.height + 1) * col]);
+        let mut me = self.elems.into_iter();
+        let mut other = bottom.elems.into_iter();
+
+        for _ in 0..self.width {
+            this.elems.extend((&mut me).take(self.height));
+            this.elems.extend((&mut other).take(bottom.height));
         }
 
         Ok(this)
     }
 
-    pub fn ext_vert(&self, value: &Value, extra_rows: usize) -> Self {
+    pub fn ext_vert(self, value: Value, extra_rows: usize) -> Self {
         let mut this = Self {
             elems: Vec::with_capacity((self.height + extra_rows) * self.width),
             width: self.width,
             height: self.height + extra_rows,
         };
 
-        for col in 0..self.width {
+        let mut me = self.elems.into_iter();
+
+        for _ in 0..self.width {
+            this.elems.extend((&mut me).take(self.height));
             this.elems
-                .extend_from_slice(&self.elems[self.height * col..(self.height + 1) * col]);
-            this.elems.extend((0..extra_rows).map(|_| value.clone()));
+                .extend(std::iter::repeat_n(value.clone(), extra_rows));
         }
 
         this
     }
 
-    pub fn aug_hor(&self, right: &Self) -> Result<Self> {
+    pub fn aug_hor(self, right: Self) -> Result<Self> {
         if self.height != right.height {
             return Err(crate::errors::MathError::AugmentShapeMismatch);
         }
 
         let mut this = Self {
-            elems: Vec::with_capacity(self.height * (self.width + right.width)),
+            elems: self.elems,
             width: self.width + right.width,
             height: self.height,
         };
 
-        this.elems.extend_from_slice(&self.elems);
-        this.elems.extend_from_slice(&right.elems);
+        this.elems.extend(right.elems.into_iter());
 
         Ok(this)
     }
 
-    pub fn ext_hor(&self, value: &Value, extra_cols: usize) -> Self {
+    pub fn ext_hor(self, value: Value, extra_cols: usize) -> Self {
         let mut this = Self {
-            elems: Vec::with_capacity(self.height * (self.width + extra_cols)),
+            elems: self.elems,
             width: self.width + extra_cols,
             height: self.height,
         };
 
-        this.elems.extend_from_slice(&self.elems);
         this.elems
-            .extend((0..extra_cols * self.height).map(|_| value.clone()));
+            .extend(std::iter::repeat_n(value, extra_cols * self.height));
 
         this
     }
 
     // Fills in off-diagonals with zeros
-    pub fn aug_diag(&self, bottom_right: &Self) -> Self {
+    pub fn aug_diag(self, bottom_right: Self) -> Self {
         let width = self.width + bottom_right.width;
         let height = self.height + bottom_right.height;
 
@@ -302,27 +285,28 @@ impl ConcreteMatrix {
             height,
         };
 
-        for col in 0..self.width {
-            this.elems
-                .extend_from_slice(&self.elems[col * self.height..(col + 1) * self.height]);
+        let mut me = self.elems.into_iter();
+
+        for _ in 0..self.width {
+            this.elems.extend((&mut me).take(self.height));
 
             this.elems
-                .extend(std::iter::repeat_n(Scalar::ZERO, bottom_right.height).map(Value::Scalar));
+                .extend(std::iter::repeat_n(Value::ZERO, bottom_right.height));
         }
 
-        for col in 0..bottom_right.width {
-            this.elems
-                .extend(std::iter::repeat_n(Scalar::ZERO, bottom_right.height).map(Value::Scalar));
+        let mut other = bottom_right.elems.into_iter();
 
-            this.elems.extend_from_slice(
-                &bottom_right.elems[col * bottom_right.height..(col + 1) * bottom_right.height],
-            );
+        for _ in 0..bottom_right.width {
+            this.elems
+                .extend(std::iter::repeat_n(Value::ZERO, self.height));
+
+            this.elems.extend((&mut other).take(bottom_right.height));
         }
 
         this
     }
 
-    pub fn ext_diag(&self, value: &Value, extra_cols: usize, extra_rows: usize) -> Self {
+    pub fn ext_diag(self, value: Value, extra_cols: usize, extra_rows: usize) -> Self {
         let width = self.width + extra_cols;
         let height = self.height + extra_rows;
 
@@ -332,23 +316,22 @@ impl ConcreteMatrix {
             height,
         };
 
-        for col in 0..self.width {
-            this.elems
-                .extend_from_slice(&self.elems[col * self.height..(col + 1) * self.height]);
+        let mut me = self.elems.into_iter();
+
+        for _ in 0..self.width {
+            this.elems.extend((&mut me).take(self.height));
 
             this.elems
                 .extend(std::iter::repeat_n(value.clone(), extra_rows));
         }
 
-        for _ in 0..extra_cols {
-            this.elems
-                .extend(std::iter::repeat_n(value.clone(), height));
-        }
+        this.elems
+            .extend(std::iter::repeat_n(value, extra_cols * height));
 
         this
     }
 
-    pub fn mul(&self, rhs: &Self) -> Result<Self> {
+    pub fn mul(self, rhs: Self) -> Result<Self> {
         if self.width != rhs.height {
             return Err(crate::errors::MathError::MatrixShapeMismatch);
         }
@@ -364,8 +347,8 @@ impl ConcreteMatrix {
                 let result = self
                     .iter_row(row)?
                     .zip(rhs.iter_col(col)?)
-                    .map(|(a, b)| a.mul(b))
-                    .reduce(|acc, rhs| acc.and_then(|x| x.add(&rhs?)))
+                    .map(|(a, b)| a.clone().mul(b.clone()))
+                    .reduce(|acc, rhs| acc.and_then(|x| x.add(rhs?)))
                     .unwrap();
 
                 this.elems.push(result?)
@@ -376,9 +359,9 @@ impl ConcreteMatrix {
     }
 
     pub fn hadamard_op(
-        &self,
-        rhs: &Self,
-        mut op: impl FnMut(&Value, &Value) -> Result<Value>,
+        self,
+        rhs: Self,
+        mut op: impl FnMut(Value, Value) -> Result<Value>,
     ) -> Result<Self> {
         if self.width != rhs.width || self.height != rhs.height {
             return Err(crate::errors::MathError::MatrixShapeMismatch);
@@ -387,22 +370,22 @@ impl ConcreteMatrix {
         Ok(Self {
             elems: self
                 .elems
-                .iter()
-                .zip(rhs.elems.iter())
+                .into_iter()
+                .zip(rhs.elems.into_iter())
                 .map(move |(x, y)| op(x, y))
                 .collect::<Result<Vec<_>>>()?,
-            ..*self
+            ..self
         })
     }
 
-    pub fn scalar_mul(&self, rhs: &Value) -> Result<Self> {
+    pub fn scalar_mul(self, rhs: Value) -> Result<Self> {
         Ok(Self {
             elems: self
                 .elems
-                .iter()
-                .map(|x| x.mul(rhs))
+                .into_iter()
+                .map(|x| x.mul(rhs.clone()))
                 .collect::<Result<Vec<_>>>()?,
-            ..*self
+            ..self
         })
     }
 

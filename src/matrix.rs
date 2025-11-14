@@ -737,17 +737,18 @@ impl Matrix {
 
         let matrix_result = op(me, rh)?;
 
-        let result =
-            if matches!(self, Matrix::Identity { .. }) || matches!(rhs, Matrix::Identity { .. }) {
-                if let (
+        let result = if matches!(self, Matrix::Identity { .. })
+            || matches!(rhs, Matrix::Identity { .. })
+        {
+            match (self, rhs) {
+                (
                     Matrix::Identity {
                         scale: scale_me, ..
                     },
                     Matrix::Identity {
                         scale: scale_rh, ..
                     },
-                ) = (self, rhs)
-                {
+                ) => {
                     let scale = id_op(
                         scale_me.as_deref().unwrap_or(&Value::ONE),
                         scale_rh.as_deref().unwrap_or(&Value::ONE),
@@ -766,20 +767,27 @@ impl Matrix {
                             scale: Some(Box::new(scale)),
                         }
                     }
-                } else {
-                    Matrix::Concrete(matrix_result)
                 }
-            } else if self.is_concrete_width() || rhs.is_concrete_width() {
-                if self.is_concrete_height() || rhs.is_concrete_height() {
-                    Matrix::Concrete(matrix_result)
-                } else {
-                    Matrix::UnboundedHeight(matrix_result)
-                }
-            } else if self.is_concrete_height() || rhs.is_concrete_height() {
-                Matrix::UnboundedWidth(matrix_result)
+
+                (Matrix::Identity { scale, .. }, Matrix::UnboundedSize(_))
+                | (Matrix::UnboundedSize(_), Matrix::Identity { scale, .. }) => Matrix::Identity {
+                    concrete: matrix_result,
+                    scale: scale.clone(),
+                },
+
+                _ => Matrix::Concrete(matrix_result),
+            }
+        } else if self.is_concrete_width() || rhs.is_concrete_width() {
+            if self.is_concrete_height() || rhs.is_concrete_height() {
+                Matrix::Concrete(matrix_result)
             } else {
-                Matrix::UnboundedSize(matrix_result)
-            };
+                Matrix::UnboundedHeight(matrix_result)
+            }
+        } else if self.is_concrete_height() || rhs.is_concrete_height() {
+            Matrix::UnboundedWidth(matrix_result)
+        } else {
+            Matrix::UnboundedSize(matrix_result)
+        };
 
         Ok(result)
     }

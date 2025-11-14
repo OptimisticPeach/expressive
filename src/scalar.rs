@@ -46,7 +46,7 @@ impl Floatify for Scalar {
 
 macro_rules! impl_scalar_ops {
     ($name:ident, ($op:tt)) => {
-        pub fn $name(&self, other: &Self) -> Self {
+        pub fn $name(self, other: Self) -> Self {
             match (self, other) {
                 (Self::Rational(x), Self::Rational(y)) => Self::Rational(x $op y),
                 (Self::Rational(x), Self::Float(y)) => Self::Float(x.floatify() $op y),
@@ -60,7 +60,7 @@ macro_rules! impl_scalar_ops {
 macro_rules! impl_float_ops {
     ($($name:ident),+$(,)?) => {
         $(
-            pub fn $name(&self) -> Self {
+            pub fn $name(self) -> Self {
                 Self::Float(self.float().$name())
             }
         )+
@@ -84,25 +84,25 @@ impl Scalar {
     impl_scalar_ops!(sub, (-));
     impl_scalar_ops!(mul, (*));
 
-    pub fn div(&self, rhs: &Self) -> Result<Self> {
-        Ok(self.mul(&rhs.invert()?))
+    pub fn div(self, rhs: Self) -> Result<Self> {
+        Ok(self.mul(rhs.invert()?))
     }
 
-    pub fn neg(&self) -> Self {
+    pub fn neg(self) -> Self {
         match self {
             Self::Rational(x) => Self::Rational(-x),
             Self::Float(x) => Self::Float(-x),
         }
     }
 
-    pub fn is_zero(&self) -> bool {
+    pub fn is_zero(self) -> bool {
         match self {
             Self::Rational(x) => *x.norm_sqr().numer() == 0,
             Self::Float(x) => x.norm_sqr() == 0.0,
         }
     }
 
-    pub fn invert(&self) -> Result<Self> {
+    pub fn invert(self) -> Result<Self> {
         if self.is_zero() {
             return Err(crate::errors::MathError::DivideByZero);
         }
@@ -113,14 +113,14 @@ impl Scalar {
         }
     }
 
-    pub fn conj(&self) -> Self {
+    pub fn conj(self) -> Self {
         match self {
             Self::Rational(x) => Self::Rational(x.conj()),
             Self::Float(x) => Self::Float(x.conj()),
         }
     }
 
-    fn faithful_integer(&self) -> Option<i128> {
+    fn faithful_integer(self) -> Option<i128> {
         match self {
             Scalar::Rational(complex) => {
                 if complex.im.reduced() != Ratio::ZERO {
@@ -150,7 +150,7 @@ impl Scalar {
         }
     }
 
-    pub fn pow(&self, power: &Self) -> Self {
+    pub fn pow(self, power: Self) -> Self {
         let floated = match self {
             Scalar::Rational(complex) => {
                 if let Some(pow) = power.faithful_integer() {
@@ -161,7 +161,7 @@ impl Scalar {
 
                 complex.floatify()
             }
-            Scalar::Float(complex) => *complex,
+            Scalar::Float(complex) => complex,
         };
 
         Self::Float(floated.powc(power.float()))
