@@ -41,7 +41,7 @@ pub enum Unary {
 }
 
 impl Unary {
-    pub fn eval(&self, arg: &Value) -> Result<Value> {
+    pub fn eval(&self, arg: Value) -> Result<Value> {
         match *self {
             Unary::Neg => arg.neg(),
             Unary::Exp => arg.exp(),
@@ -68,7 +68,7 @@ pub enum Binary {
 }
 
 impl Binary {
-    pub fn eval(&self, a: &Value, b: &Value) -> Result<Value> {
+    pub fn eval(&self, a: Value, b: Value) -> Result<Value> {
         match *self {
             Binary::Add => a.add(b),
             Binary::Sub => a.sub(b),
@@ -124,8 +124,8 @@ impl Ast {
     pub fn eval(&self) -> Result<Value> {
         match (&self.function, &self.args[..]) {
             (Function::Nilary(nil), []) => nil.eval(),
-            (Function::Unary(unary), [val]) => unary.eval(&val.eval()?),
-            (Function::Binary(binary), [lhs, rhs]) => binary.eval(&lhs.eval()?, &rhs.eval()?),
+            (Function::Unary(unary), [val]) => unary.eval(val.eval()?),
+            (Function::Binary(binary), [lhs, rhs]) => binary.eval(lhs.eval()?, rhs.eval()?),
             (Function::Variadic(variadic), vals) => {
                 let vals = vals.iter().map(|x| x.eval()).collect::<Result<Vec<_>>>()?;
                 variadic.eval(&vals)

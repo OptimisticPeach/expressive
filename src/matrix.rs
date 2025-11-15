@@ -103,7 +103,7 @@ impl Matrix {
 
     // pub fn iter_row(&self, row: usize) -> Result<impl Iterator<Item = &Value>> {}
 
-    pub fn remove_col(&self, col: usize) -> Result<Self> {
+    pub fn remove_col(&mut self, col: usize) -> Result<Self> {
         match self {
             Matrix::Concrete(concrete) => concrete.remove_col(col).map(Matrix::Concrete),
 
@@ -135,7 +135,7 @@ impl Matrix {
         }
     }
 
-    pub fn remove_row(&self, row: usize) -> Result<Self> {
+    pub fn remove_row(&mut self, row: usize) -> Result<Self> {
         match self {
             Matrix::Concrete(concrete) => concrete.remove_row(row).map(Matrix::Concrete),
 
@@ -167,55 +167,47 @@ impl Matrix {
         }
     }
 
-    pub fn remove_col_row(&self, col: usize, row: usize) -> Result<Self> {
+    pub fn remove_col_row(&mut self, col: usize, row: usize) -> Result<()> {
         match self {
-            Matrix::Concrete(concrete_matrix) => concrete_matrix
-                .remove_col_row(col, row)
-                .map(Matrix::Concrete),
+            Matrix::Concrete(concrete_matrix) => concrete_matrix.remove_col_row(col, row),
 
             Matrix::UnboundedHeight(concrete) => {
                 if row >= concrete.height {
-                    concrete.remove_col(col).map(Matrix::UnboundedHeight)
+                    concrete.remove_col(col).map(|_| {})
                 } else {
-                    concrete
-                        .remove_col_row(col, row)
-                        .map(Matrix::UnboundedHeight)
+                    concrete.remove_col_row(col, row)
                 }
             }
 
             Matrix::UnboundedWidth(concrete) => {
                 if col >= concrete.width {
-                    concrete.remove_row(row).map(Matrix::UnboundedWidth)
+                    concrete.remove_row(row).map(|_| {})
                 } else {
-                    concrete
-                        .remove_col_row(col, row)
-                        .map(Matrix::UnboundedWidth)
+                    concrete.remove_col_row(col, row)
                 }
             }
 
             Matrix::UnboundedSize(concrete) => {
-                let result = if col >= concrete.width {
+                if col >= concrete.width {
                     if row >= concrete.height {
-                        Ok(concrete.clone())
+                        Ok(())
                     } else {
-                        concrete.remove_row(row)
+                        concrete.remove_row(row).map(|_| {})
                     }
                 } else {
                     if row >= concrete.height {
-                        concrete.remove_col(col)
+                        concrete.remove_col(col).map(|_| {})
                     } else {
                         concrete.remove_col_row(col, row)
                     }
-                };
-
-                result.map(Matrix::UnboundedSize)
+                }
             }
 
             Matrix::Identity { .. } => Err(crate::errors::MathError::UnsupportedMatrixOp),
         }
     }
 
-    fn concrete_rows(&self, height: usize) -> Option<Self> {
+    fn concrete_rows(self, height: usize) -> Option<Self> {
         let result = match self.extend_rows(height)? {
             x @ Matrix::UnboundedWidth(_) => x,
             Matrix::UnboundedSize(concrete_matrix) => Matrix::UnboundedWidth(concrete_matrix),
@@ -228,7 +220,7 @@ impl Matrix {
         Some(result)
     }
 
-    fn concrete_cols(&self, width: usize) -> Option<Self> {
+    fn concrete_cols(self, width: usize) -> Option<Self> {
         let result = match self.extend_cols(width)? {
             x @ Matrix::UnboundedHeight(_) => x,
             Matrix::UnboundedSize(concrete_matrix) => Matrix::UnboundedHeight(concrete_matrix),
@@ -241,16 +233,16 @@ impl Matrix {
         Some(result)
     }
 
-    fn concrete_row_cols(&self, width: usize, height: usize) -> Option<ConcreteMatrix> {
+    fn concrete_row_cols(self, width: usize, height: usize) -> Option<ConcreteMatrix> {
         self.extend_cols_rows(width, height)
             .map(Matrix::unwrap_best_guess)
     }
 
-    fn extend_rows(&self, height: usize) -> Option<Self> {
+    fn extend_rows(self, height: usize) -> Option<Self> {
         let cur_height = self.min_height();
 
         if cur_height == height {
-            return Some(self.clone());
+            return Some(self);
         }
 
         if cur_height > height {
@@ -267,7 +259,7 @@ impl Matrix {
             Matrix::Identity { concrete, scale } => {
                 let delta = height - concrete.height;
 
-                let mut result = concrete.ext_diag(&Value::ZERO, delta, delta);
+                let mut result = concrete.ext_diag(Value::ZERO, delta, delta);
 
                 let one = scale.clone().map(|x| *x).unwrap_or(Value::ONE);
 
@@ -281,20 +273,20 @@ impl Matrix {
                 })
             }
             Matrix::UnboundedHeight(concrete_matrix) => Some(Matrix::UnboundedHeight(
-                concrete_matrix.ext_vert(&Value::ZERO, height - concrete_matrix.height),
+                concrete_matrix.ext_vert(Value::ZERO, height - cur_height),
             )),
 
             Matrix::UnboundedSize(concrete_matrix) => Some(Matrix::UnboundedSize(
-                concrete_matrix.ext_vert(&Value::ZERO, height - concrete_matrix.height),
+                concrete_matrix.ext_vert(Value::ZERO, height - cur_height),
             )),
         }
     }
 
-    fn extend_cols(&self, width: usize) -> Option<Self> {
+    fn extend_cols(self, width: usize) -> Option<Self> {
         let cur_width = self.min_width();
 
         if cur_width == width {
-            return Some(self.clone());
+            return Some(self);
         }
 
         if cur_width > width {
@@ -311,7 +303,7 @@ impl Matrix {
             Matrix::Identity { concrete, scale } => {
                 let delta = width - concrete.width;
 
-                let mut result = concrete.ext_diag(&Value::ZERO, delta, delta);
+                let mut result = concrete.ext_diag(Value::ZERO, delta, delta);
 
                 let one = scale.clone().map(|x| *x).unwrap_or(Value::ONE);
 
@@ -325,16 +317,16 @@ impl Matrix {
                 })
             }
             Matrix::UnboundedWidth(concrete_matrix) => Some(Matrix::UnboundedWidth(
-                concrete_matrix.ext_hor(&Value::ZERO, width - concrete_matrix.width),
+                concrete_matrix.ext_hor(Value::ZERO, width - cur_width),
             )),
 
             Matrix::UnboundedSize(concrete_matrix) => Some(Matrix::UnboundedSize(
-                concrete_matrix.ext_hor(&Value::ZERO, width - concrete_matrix.width),
+                concrete_matrix.ext_hor(Value::ZERO, width - cur_width),
             )),
         }
     }
 
-    fn extend_cols_rows(&self, width: usize, height: usize) -> Option<Self> {
+    fn extend_cols_rows(self, width: usize, height: usize) -> Option<Self> {
         let cur_width = self.min_width();
         let cur_height = self.min_height();
 
@@ -343,7 +335,7 @@ impl Matrix {
         }
 
         if cur_width == width && cur_height == height {
-            return Some(self.clone());
+            return Some(self);
         } else if cur_width == width {
             return self.extend_rows(height);
         } else if cur_height == height {
@@ -365,7 +357,7 @@ impl Matrix {
                     return None;
                 }
 
-                let mut result = concrete.ext_diag(&Value::ZERO, delta_x, delta_x);
+                let mut result = concrete.ext_diag(Value::ZERO, delta_x, delta_x);
 
                 let one = scale.clone().map(|x| *x).unwrap_or(Value::ONE);
 
@@ -379,12 +371,12 @@ impl Matrix {
                 })
             }
             Matrix::UnboundedSize(concrete_matrix) => Some(Matrix::UnboundedSize(
-                concrete_matrix.ext_diag(&Value::ZERO, delta_x, delta_y),
+                concrete_matrix.ext_diag(Value::ZERO, delta_x, delta_y),
             )),
         }
     }
 
-    pub fn det(&self) -> Result<Value> {
+    pub fn det(self) -> Result<Value> {
         let width = self.min_width();
         let height = self.min_height();
 
@@ -398,11 +390,11 @@ impl Matrix {
             return Ok(scale.clone().map(|x| *x).unwrap_or(Value::ONE));
         }
 
-        let result = self
-            .concrete_row_cols(width, height)
-            .ok_or(MathError::NonSquareDeterminant)?;
+        let dim = width.max(height);
 
-        result.det()
+        self.concrete_row_cols(dim, dim)
+            .ok_or(MathError::NonSquareDeterminant)?
+            .det()
     }
 
     pub fn get_col(&self, col: usize) -> Result<Self> {
@@ -494,6 +486,16 @@ impl Matrix {
         }
     }
 
+    fn best_guess_mut(&mut self) -> &mut ConcreteMatrix {
+        match self {
+            Matrix::Concrete(concrete_matrix) => concrete_matrix,
+            Matrix::Identity { concrete, .. } => concrete,
+            Matrix::UnboundedHeight(concrete_matrix) => concrete_matrix,
+            Matrix::UnboundedWidth(concrete_matrix) => concrete_matrix,
+            Matrix::UnboundedSize(concrete_matrix) => concrete_matrix,
+        }
+    }
+
     fn unwrap_best_guess(self) -> ConcreteMatrix {
         match self {
             Matrix::Concrete(concrete_matrix) => concrete_matrix,
@@ -502,6 +504,10 @@ impl Matrix {
             Matrix::UnboundedWidth(concrete_matrix) => concrete_matrix,
             Matrix::UnboundedSize(concrete_matrix) => concrete_matrix,
         }
+    }
+
+    fn take_best_guess(&mut self) -> ConcreteMatrix {
+        std::mem::replace(self.best_guess_mut(), ConcreteMatrix::EMPTY)
     }
 
     fn min_width(&self) -> usize {
@@ -514,15 +520,19 @@ impl Matrix {
 
     // augment functions will just take the best guess we have in
     // the unbounded cases and identity case.
-    pub fn aug_vert(&self, bottom: &Self) -> Result<Self> {
+    pub fn aug_vert(self, bottom: Self) -> Result<Self> {
         if self.is_concrete_width() {
             let reshaped = bottom
                 .concrete_cols(self.min_width())
                 .ok_or(MathError::AugmentShapeMismatch)?;
 
-            let result = self.best_guess().aug_vert(reshaped.best_guess())?;
+            let concrete_height = reshaped.is_concrete_height();
 
-            if reshaped.is_concrete_height() {
+            let result = self
+                .unwrap_best_guess()
+                .aug_vert(reshaped.unwrap_best_guess())?;
+
+            if concrete_height {
                 return Ok(Matrix::Concrete(result));
             } else {
                 return Ok(Matrix::UnboundedHeight(result));
@@ -534,9 +544,14 @@ impl Matrix {
                 .concrete_cols(bottom.min_width())
                 .ok_or(MathError::AugmentShapeMismatch)?;
 
-            let result = reshaped.best_guess().aug_vert(bottom.best_guess())?;
+            let concrete_height =
+                bottom.is_concrete_height() || matches!(bottom, Matrix::Identity { .. });
 
-            if bottom.is_concrete_height() || matches!(bottom, Matrix::Identity { .. }) {
+            let result = reshaped
+                .unwrap_best_guess()
+                .aug_vert(bottom.unwrap_best_guess())?;
+
+            if concrete_height {
                 return Ok(Matrix::Concrete(result));
             } else {
                 return Ok(Matrix::UnboundedHeight(result));
@@ -547,24 +562,30 @@ impl Matrix {
         let concrete_height;
 
         if self.min_width() == bottom.min_width() {
-            result = self.best_guess().aug_vert(bottom.best_guess());
             concrete_height =
                 bottom.is_concrete_height() || matches!(bottom, Matrix::Identity { .. });
+            result = self
+                .unwrap_best_guess()
+                .aug_vert(bottom.unwrap_best_guess());
         } else if self.min_width() > bottom.min_width() {
             let bottom = bottom
                 .concrete_cols(self.min_width())
                 .ok_or(MathError::AugmentShapeMismatch)?;
 
-            result = self.best_guess().aug_vert(bottom.best_guess());
             concrete_height = bottom.is_concrete_height();
+
+            result = self
+                .unwrap_best_guess()
+                .aug_vert(bottom.unwrap_best_guess());
         } else {
             let top = self
                 .concrete_cols(bottom.min_width())
                 .ok_or(MathError::AugmentShapeMismatch)?;
 
-            result = top.best_guess().aug_vert(bottom.best_guess());
             concrete_height =
                 bottom.is_concrete_height() || matches!(bottom, Matrix::Identity { .. });
+
+            result = top.unwrap_best_guess().aug_vert(bottom.unwrap_best_guess());
         }
 
         if concrete_height {
@@ -574,15 +595,19 @@ impl Matrix {
         }
     }
 
-    pub fn aug_hor(&self, right: &Self) -> Result<Self> {
+    pub fn aug_hor(self, right: Self) -> Result<Self> {
         if self.is_concrete_height() {
             let reshaped = right
                 .concrete_rows(self.min_height())
                 .ok_or(MathError::AugmentShapeMismatch)?;
 
-            let result = self.best_guess().aug_hor(reshaped.best_guess())?;
+            let concrete_width = reshaped.is_concrete_width();
 
-            if reshaped.is_concrete_width() {
+            let result = self
+                .unwrap_best_guess()
+                .aug_hor(reshaped.unwrap_best_guess())?;
+
+            if concrete_width {
                 return Ok(Matrix::Concrete(result));
             } else {
                 return Ok(Matrix::UnboundedHeight(result));
@@ -594,9 +619,14 @@ impl Matrix {
                 .concrete_rows(right.min_height())
                 .ok_or(MathError::AugmentShapeMismatch)?;
 
-            let result = reshaped.best_guess().aug_hor(right.best_guess())?;
+            let concrete_width =
+                right.is_concrete_width() || matches!(right, Matrix::Identity { .. });
 
-            if right.is_concrete_width() || matches!(right, Matrix::Identity { .. }) {
+            let result = reshaped
+                .unwrap_best_guess()
+                .aug_hor(right.unwrap_best_guess())?;
+
+            if concrete_width {
                 return Ok(Matrix::Concrete(result));
             } else {
                 return Ok(Matrix::UnboundedHeight(result));
@@ -607,22 +637,22 @@ impl Matrix {
         let concrete_width;
 
         if self.min_height() == right.min_height() {
-            result = self.best_guess().aug_hor(right.best_guess());
             concrete_width = right.is_concrete_width() || matches!(right, Matrix::Identity { .. });
+            result = self.unwrap_best_guess().aug_hor(right.unwrap_best_guess());
         } else if self.min_height() > right.min_height() {
             let right = right
                 .concrete_rows(self.min_height())
                 .ok_or(MathError::AugmentShapeMismatch)?;
 
-            result = self.best_guess().aug_hor(right.best_guess());
             concrete_width = right.is_concrete_width();
+            result = self.unwrap_best_guess().aug_hor(right.unwrap_best_guess());
         } else {
             let top = self
                 .concrete_rows(right.min_height())
                 .ok_or(MathError::AugmentShapeMismatch)?;
 
-            result = top.best_guess().aug_hor(right.best_guess());
             concrete_width = right.is_concrete_width() || matches!(right, Matrix::Identity { .. });
+            result = top.unwrap_best_guess().aug_hor(right.unwrap_best_guess());
         }
 
         if concrete_width {
@@ -632,7 +662,7 @@ impl Matrix {
         }
     }
 
-    pub fn mul(&self, rhs: &Self) -> Result<Self> {
+    pub fn mul(self, rhs: Self) -> Result<Self> {
         // the size upon which both must agree
         let same_size = self.min_width().max(rhs.min_height());
 
@@ -643,15 +673,11 @@ impl Matrix {
             .concrete_rows(same_size)
             .ok_or(MathError::MatrixShapeMismatch)?;
 
-        let result = lhs.best_guess().mul(rhs.best_guess())?;
-
-        let result = match (lhs, rhs) {
-            (Matrix::Concrete(_), Matrix::Concrete(_)) => Matrix::Concrete(result),
-            (Matrix::Concrete(_), Matrix::UnboundedWidth(_)) => Matrix::UnboundedWidth(result),
-            (Matrix::UnboundedHeight(_), Matrix::Concrete(_)) => Matrix::UnboundedHeight(result),
-            (Matrix::UnboundedHeight(_), Matrix::UnboundedWidth(_)) => {
-                Matrix::UnboundedSize(result)
-            }
+        let wrapper = match (&lhs, &rhs) {
+            (Matrix::Concrete(_), Matrix::Concrete(_)) => Matrix::Concrete,
+            (Matrix::Concrete(_), Matrix::UnboundedWidth(_)) => Matrix::UnboundedWidth,
+            (Matrix::UnboundedHeight(_), Matrix::Concrete(_)) => Matrix::UnboundedHeight,
+            (Matrix::UnboundedHeight(_), Matrix::UnboundedWidth(_)) => Matrix::UnboundedSize,
 
             // doing concrete_rows/cols will always turn an Identity into a Concrete
             (Matrix::Identity { .. }, _) | (_, Matrix::Identity { .. }) => unreachable!(),
@@ -663,32 +689,28 @@ impl Matrix {
             (_, Matrix::UnboundedHeight(_) | Matrix::UnboundedSize(_)) => unreachable!(),
         };
 
-        Ok(result)
+        let result = lhs.unwrap_best_guess().mul(rhs.unwrap_best_guess())?;
+
+        Ok(wrapper(result))
     }
 
-    pub fn scalar_mul(&self, rhs: &Value) -> Result<Self> {
-        match self {
-            Matrix::Concrete(concrete_matrix) => {
-                concrete_matrix.scalar_mul(rhs).map(Matrix::Concrete)
-            }
-            Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
-                concrete: concrete.scalar_mul(rhs)?,
-                scale: scale
-                    .as_ref()
-                    .map(|x| x.mul(rhs))
-                    .transpose()?
-                    .map(Box::new),
-            }),
-            Matrix::UnboundedHeight(concrete_matrix) => {
-                concrete_matrix.scalar_mul(rhs).map(Matrix::UnboundedHeight)
-            }
-            Matrix::UnboundedWidth(concrete_matrix) => {
-                concrete_matrix.scalar_mul(rhs).map(Matrix::UnboundedWidth)
-            }
-            Matrix::UnboundedSize(concrete_matrix) => {
-                concrete_matrix.scalar_mul(rhs).map(Matrix::UnboundedSize)
-            }
-        }
+    pub fn scalar_mul(mut self, rhs: Value) -> Result<Self> {
+        let mat = std::mem::replace(self.best_guess_mut(), ConcreteMatrix::EMPTY);
+
+        let result = mat.scalar_mul(rhs.clone())?;
+
+        let result = match self {
+            Matrix::Concrete(_) => Matrix::Concrete(result),
+            Matrix::Identity { scale, .. } => Matrix::Identity {
+                concrete: result,
+                scale: scale.map(|x| x.mul(rhs)).transpose()?.map(Box::new),
+            },
+            Matrix::UnboundedHeight(_) => Matrix::UnboundedHeight(result),
+            Matrix::UnboundedWidth(_) => Matrix::UnboundedWidth(result),
+            Matrix::UnboundedSize(_) => Matrix::UnboundedSize(result),
+        };
+
+        Ok(result)
     }
 
     pub fn from_size_slice_rowmaj(width: usize, height: usize, values: &[Value]) -> Result<Self> {
@@ -700,39 +722,43 @@ impl Matrix {
     }
 
     fn componentwise_binop(
-        &self,
-        rhs: &Self,
-        op: impl FnOnce(&ConcreteMatrix, &ConcreteMatrix) -> Result<ConcreteMatrix>,
-        id_op: impl FnOnce(&Value, &Value) -> Result<Value>,
+        mut self,
+        mut rhs: Self,
+        op: impl FnOnce(ConcreteMatrix, ConcreteMatrix) -> Result<ConcreteMatrix>,
+        id_op: impl FnOnce(Value, Value) -> Result<Value>,
     ) -> Result<Self> {
         // we need to get `self`'s dimensions and `rhs`'s dimensions to agree.
 
         let width = self.min_width().max(rhs.min_width());
         let height = self.min_height().max(rhs.min_height());
 
-        let temp_me;
         let me;
-        let temp_rh;
         let rh;
 
         if width == self.min_width() && height == self.min_height() {
-            me = self.best_guess();
+            me = self.take_best_guess();
         } else {
-            temp_me = self
+            let temp = self.take_best_guess();
+            let mut other = self.clone();
+
+            *other.best_guess_mut() = temp;
+
+            me = other
                 .concrete_row_cols(width, height)
                 .ok_or(MathError::MatrixShapeMismatch)?;
-
-            me = &temp_me;
         }
 
         if width == rhs.min_width() && height == rhs.min_height() {
-            rh = rhs.best_guess();
+            rh = rhs.take_best_guess();
         } else {
-            temp_rh = rhs
+            let temp = rhs.take_best_guess();
+            let mut other = rhs.clone();
+
+            *other.best_guess_mut() = temp;
+
+            rh = other
                 .concrete_row_cols(width, height)
                 .ok_or(MathError::MatrixShapeMismatch)?;
-
-            rh = &temp_rh;
         }
 
         let matrix_result = op(me, rh)?;
@@ -750,8 +776,8 @@ impl Matrix {
                     },
                 ) => {
                     let scale = id_op(
-                        scale_me.as_deref().unwrap_or(&Value::ONE),
-                        scale_rh.as_deref().unwrap_or(&Value::ONE),
+                        scale_me.map(|x| *x).unwrap_or(Value::ONE),
+                        scale_rh.map(|x| *x).unwrap_or(Value::ONE),
                     )?;
 
                     if scale == Value::ONE {
@@ -792,19 +818,19 @@ impl Matrix {
         Ok(result)
     }
 
-    pub fn add(&self, rhs: &Self) -> Result<Self> {
+    pub fn add(self, rhs: Self) -> Result<Self> {
         self.componentwise_binop(rhs, |x, y| x.add(y), |x, y| x.add(y))
     }
 
-    pub fn sub(&self, rhs: &Self) -> Result<Self> {
+    pub fn sub(self, rhs: Self) -> Result<Self> {
         self.componentwise_binop(rhs, |x, y| x.sub(y), |x, y| x.sub(y))
     }
 
-    pub fn mul_componentwise(&self, rhs: &Self) -> Result<Self> {
+    pub fn mul_componentwise(self, rhs: Self) -> Result<Self> {
         self.componentwise_binop(rhs, |x, y| x.mul_componentwise(y), |x, y| x.mul(y))
     }
 
-    pub fn neg(&self) -> Result<Self> {
+    pub fn neg(self) -> Result<Self> {
         match self {
             Matrix::Concrete(concrete_matrix) => concrete_matrix.neg().map(Matrix::Concrete),
             Matrix::UnboundedHeight(concrete_matrix) => {
@@ -817,7 +843,7 @@ impl Matrix {
                 concrete_matrix.neg().map(Matrix::UnboundedSize)
             }
             Matrix::Identity { concrete, scale } => {
-                let scale = scale.as_deref().unwrap_or(&Value::ONE).neg()?;
+                let scale = scale.map(|x| *x).unwrap_or(Value::ONE).neg()?;
                 let scale = if scale == Value::ONE {
                     None
                 } else {
@@ -890,17 +916,21 @@ impl Matrix {
         Matrix::UnboundedSize(ConcreteMatrix::EMPTY)
     }
 
-    pub fn invert(&self) -> Result<Self> {
+    pub fn invert(self) -> Result<Self> {
         match self {
             Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
                 concrete: concrete.invert()?,
-                scale: scale
-                    .as_ref()
-                    .map(|x| x.invert().map(Box::new))
-                    .transpose()?,
+                scale: scale.map(|x| x.invert().map(Box::new)).transpose()?,
             }),
 
-            _ => self.best_guess().invert().map(Self::Concrete),
+            _ => {
+                let size = self.min_width().max(self.min_height());
+
+                self.concrete_row_cols(size, size)
+                    .ok_or(MathError::MatrixNotSquare)
+                    .and_then(|x| x.invert())
+                    .map(Self::Concrete)
+            }
         }
     }
 
@@ -937,12 +967,12 @@ impl Matrix {
         }
     }
 
-    pub fn conj(&self) -> Result<Self> {
+    pub fn conj(self) -> Result<Self> {
         match self {
             Matrix::Concrete(concrete_matrix) => concrete_matrix.conj().map(Self::Concrete),
             Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
                 concrete: concrete.conj()?,
-                scale: scale.as_ref().map(|x| x.conj().map(Box::new)).transpose()?,
+                scale: scale.map(|x| x.conj().map(Box::new)).transpose()?,
             }),
             Matrix::UnboundedHeight(concrete_matrix) => {
                 concrete_matrix.conj().map(Matrix::UnboundedHeight)
@@ -956,102 +986,109 @@ impl Matrix {
         }
     }
 
-    pub fn norm_sq(&self) -> Result<Value> {
+    pub fn norm_sq(self) -> Result<Value> {
         match self {
             Matrix::Identity { concrete, scale } => {
                 if concrete.width == 0 {
-                    Ok(scale.as_ref().map(|x| (&**x).clone()).unwrap_or(Value::ONE))
+                    Ok(scale
+                        .map(|x| x.norm_sq())
+                        .transpose()?
+                        .unwrap_or(Value::ONE))
                 } else {
                     concrete.norm_sq()
                 }
             }
 
-            _ => self.best_guess().norm_sq(),
+            _ => self.unwrap_best_guess().norm_sq(),
         }
     }
 
-    pub fn sin(&self) -> Result<Self> {
+    pub fn sin(self) -> Result<Self> {
         match self {
             Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
                 concrete: concrete.sin()?,
-                scale: scale.as_ref().map(|x| x.sin().map(Box::new)).transpose()?,
+                scale: scale.map(|x| x.sin().map(Box::new)).transpose()?,
             }),
 
-            _ => self.best_guess().sin().map(Self::Concrete),
+            _ => self.unwrap_best_guess().sin().map(Self::Concrete),
         }
     }
 
-    pub fn cos(&self) -> Result<Self> {
+    pub fn cos(self) -> Result<Self> {
         match self {
             Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
                 concrete: concrete.cos()?,
-                scale: scale.as_ref().map(|x| x.cos().map(Box::new)).transpose()?,
+                scale: scale.map(|x| x.cos().map(Box::new)).transpose()?,
             }),
 
-            _ => self.best_guess().cos().map(Self::Concrete),
+            _ => self.unwrap_best_guess().cos().map(Self::Concrete),
         }
     }
 
-    pub fn tan(&self) -> Result<Self> {
+    pub fn tan(self) -> Result<Self> {
         match self {
             Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
                 concrete: concrete.tan()?,
-                scale: scale.as_ref().map(|x| x.tan().map(Box::new)).transpose()?,
+                scale: scale.map(|x| x.tan().map(Box::new)).transpose()?,
             }),
 
-            _ => self.best_guess().tan().map(Self::Concrete),
+            _ => self.unwrap_best_guess().tan().map(Self::Concrete),
         }
     }
 
-    pub fn sinh(&self) -> Result<Self> {
+    pub fn sinh(self) -> Result<Self> {
         match self {
             Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
                 concrete: concrete.sinh()?,
-                scale: scale.as_ref().map(|x| x.sinh().map(Box::new)).transpose()?,
+                scale: scale.map(|x| x.sinh().map(Box::new)).transpose()?,
             }),
 
-            _ => self.best_guess().sinh().map(Self::Concrete),
+            _ => self.unwrap_best_guess().sinh().map(Self::Concrete),
         }
     }
 
-    pub fn cosh(&self) -> Result<Self> {
+    pub fn cosh(self) -> Result<Self> {
         match self {
             Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
                 concrete: concrete.cosh()?,
-                scale: scale.as_ref().map(|x| x.cosh().map(Box::new)).transpose()?,
+                scale: scale.map(|x| x.cosh().map(Box::new)).transpose()?,
             }),
 
-            _ => self.best_guess().cosh().map(Self::Concrete),
+            _ => self.unwrap_best_guess().cosh().map(Self::Concrete),
         }
     }
 
-    pub fn tanh(&self) -> Result<Self> {
+    pub fn tanh(self) -> Result<Self> {
         match self {
             Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
                 concrete: concrete.tanh()?,
-                scale: scale.as_ref().map(|x| x.tanh().map(Box::new)).transpose()?,
+                scale: scale.map(|x| x.tanh().map(Box::new)).transpose()?,
             }),
 
-            _ => self.best_guess().tanh().map(Self::Concrete),
+            _ => self.unwrap_best_guess().tanh().map(Self::Concrete),
         }
     }
 
     // Householder matrix for given column vector
-    pub fn householder_matrix(&self) -> Result<Self> {
-        self.best_guess().householder_matrix().map(Self::Concrete)
+    pub fn householder_matrix(self) -> Result<Self> {
+        self.unwrap_best_guess()
+            .householder_matrix()
+            .map(Self::Concrete)
     }
 
-    pub fn lower_hessenberg(&self) -> Result<Self> {
-        self.best_guess().lower_hessenberg().map(Self::Concrete)
+    pub fn lower_hessenberg(self) -> Result<Self> {
+        self.unwrap_best_guess()
+            .lower_hessenberg()
+            .map(Self::Concrete)
     }
 
     // todo: finish a proper exp impl instead of this
     // taylor series eval
-    pub fn exp(&self) -> Result<Self> {
+    pub fn exp(self) -> Result<Self> {
         match self {
             Matrix::Identity { concrete, scale } => Ok(Matrix::Identity {
                 concrete: concrete.exp()?,
-                scale: scale.as_ref().map(|x| x.exp().map(Box::new)).transpose()?,
+                scale: scale.map(|x| x.exp().map(Box::new)).transpose()?,
             }),
 
             _ => self.best_guess().exp().map(Self::Concrete),

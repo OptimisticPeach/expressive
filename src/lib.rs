@@ -19,6 +19,12 @@ pub enum Value {
     Matrix(Matrix),
 }
 
+impl Default for Value {
+    fn default() -> Self {
+        Self::ZERO
+    }
+}
+
 impl Floatify for Value {
     type Floated = Self;
 
@@ -68,10 +74,10 @@ impl Value {
         let result = match (self, rhs) {
             (Value::Scalar(x), Value::Scalar(y)) => Value::Scalar(x.div(y)?),
             (Value::Matrix(x), Value::Scalar(y)) => {
-                Value::Matrix(x.scalar_mul(&Value::Scalar(y.invert()?))?)
+                Value::Matrix(x.scalar_mul(Value::Scalar(y.invert()?))?)
             }
             (x @ Value::Scalar(_), Value::Matrix(y)) => Value::Matrix(y.invert()?.scalar_mul(x)?),
-            (Value::Matrix(x), Value::Matrix(y)) => Value::Matrix(x.mul(&y.invert()?)?),
+            (Value::Matrix(x), Value::Matrix(y)) => Value::Matrix(x.mul(y.invert()?)?),
         };
 
         Ok(result)

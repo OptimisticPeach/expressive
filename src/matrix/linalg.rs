@@ -88,7 +88,7 @@ impl ConcreteMatrix {
         Ok((0..self.width).map(move |x| &self[(x, row)]))
     }
 
-    pub fn remove_col(&mut self, col: usize) -> Result<()> {
+    pub fn remove_col(&mut self, col: usize) -> Result<Self> {
         if col >= self.width {
             return Err(crate::errors::MathError::MatrixOutOfRange);
         }
@@ -101,16 +101,24 @@ impl ConcreteMatrix {
 
         std::mem::swap(self, &mut this);
 
-        self.elems.extend(
-            this.into_iter()
-                .filter(|(x, _, _)| *x != col)
-                .map(|(_, _, v)| v),
-        );
+        let mut result = Self {
+            elems: Vec::with_capacity(self.width),
+            width: self.width,
+            height: 1,
+        };
 
-        Ok(())
+        for (x, _, elem) in this.into_iter() {
+            if x == col {
+                result.elems.push(elem);
+            } else {
+                self.elems.push(elem);
+            }
+        }
+
+        Ok(result)
     }
 
-    pub fn remove_row(&mut self, row: usize) -> Result<()> {
+    pub fn remove_row(&mut self, row: usize) -> Result<Self> {
         if row >= self.height {
             return Err(crate::errors::MathError::MatrixOutOfRange);
         }
@@ -123,13 +131,21 @@ impl ConcreteMatrix {
 
         std::mem::swap(self, &mut this);
 
-        self.elems.extend(
-            this.into_iter()
-                .filter(|(_, y, _)| *y != row)
-                .map(|(_, _, v)| v),
-        );
+        let mut result = Self {
+            elems: Vec::with_capacity(self.width),
+            width: self.width,
+            height: 1,
+        };
 
-        Ok(())
+        for (_, y, elem) in this.into_iter() {
+            if y == row {
+                result.elems.push(elem);
+            } else {
+                self.elems.push(elem);
+            }
+        }
+
+        Ok(result)
     }
 
     pub fn remove_col_row(&mut self, col: usize, row: usize) -> Result<()> {
@@ -158,17 +174,33 @@ impl ConcreteMatrix {
         Ok(())
     }
 
-    pub fn det(self) -> Result<Value> {
+    pub fn det(mut self) -> Result<Value> {
         if self.width != self.height {
             return Err(crate::errors::MathError::NonSquareDeterminant);
         }
 
-        match &*self.elems {
-            &[] => Err(crate::errors::MathError::EmptyMatrix),
-            &[x] => Ok(x),
-            &[m11, m12, m21, m22] => m11.mul(m22)?.sub(m12.mul(m21)?),
+        match &mut *self.elems {
+            [] => Err(crate::errors::MathError::EmptyMatrix),
+            [x] => Ok(std::mem::take(x)),
+            [m11, m12, m21, m22] => std::mem::take(m11)
+                .mul(std::mem::take(m22))?
+                .sub(std::mem::take(m12).mul(std::mem::take(m21))?),
             _ => self.gaussian_det(),
         }
+    }
+
+    fn gaussian_det(self) -> Result<Value> {
+        let (mut val, _pivots, det_scl) = self.row_echelon_form_internal(false, true)?;
+
+        let mut det = det_scl;
+
+        for i in 0..val.width {
+            let value = std::mem::replace(&mut val[(i, i)], Value::ZERO);
+
+            det = det.mul(value)?;
+        }
+
+        Ok(det)
     }
 
     pub fn get_col(&self, col: usize) -> Result<Self> {
@@ -478,26 +510,26 @@ impl ConcreteMatrix {
         Ok(this)
     }
 
-    pub fn add(&self, rhs: &Self) -> Result<Self> {
+    pub fn add(self, rhs: Self) -> Result<Self> {
         self.hadamard_op(rhs, Value::add)
     }
 
-    pub fn sub(&self, rhs: &Self) -> Result<Self> {
+    pub fn sub(self, rhs: Self) -> Result<Self> {
         self.hadamard_op(rhs, Value::sub)
     }
 
-    pub fn mul_componentwise(&self, rhs: &ConcreteMatrix) -> Result<Self> {
+    pub fn mul_componentwise(self, rhs: ConcreteMatrix) -> Result<Self> {
         self.hadamard_op(rhs, Value::mul)
     }
 
-    pub fn neg(&self) -> Result<Self> {
+    pub fn neg(self) -> Result<Self> {
         Ok(Self {
             elems: self
                 .elems
-                .iter()
+                .into_iter()
                 .map(|x| x.neg())
                 .collect::<Result<Vec<_>>>()?,
-            ..*self
+            ..self
         })
     }
 
@@ -526,7 +558,11 @@ impl ConcreteMatrix {
         }
 
         for i in 0..self.width {
-            self[(i, row)] = value.mul(&self[(i, row)])?;
+            let mut elem = Value::ZERO;
+
+            std::mem::swap(&mut self[(i, row)], &mut elem);
+
+            self[(i, row)] = value.clone().mul(elem)?;
         }
 
         Ok(())
@@ -539,13 +575,23 @@ impl ConcreteMatrix {
         }
 
         for i in 0..self.width {
-            self[(i, dest)] = self[(i, dest)].sub(&scale.mul(&self[(i, src)])?)?;
+            let mut elem = Value::ZERO;
+
+            std::mem::swap(&mut self[(i, dest)], &mut elem);
+
+            self[(i, dest)] = elem.sub(scale.clone().mul(self[(i, src)].clone())?)?;
         }
 
         Ok(())
     }
 
-    fn row_echelon_form_internal(&self, reduced: bool) -> Result<(Self, usize)> {
+    fn row_echelon_form_internal(
+        &self,
+        reduced: bool,
+        track_determinant: bool,
+    ) -> Result<(Self, usize, Value)> {
+        let mut det = Value::ONE;
+
         let mut this = self.clone();
 
         let mut row = 0;
@@ -571,31 +617,49 @@ impl ConcreteMatrix {
 
             if pivot_row != row {
                 this.swap_rows(row, pivot_row)?;
+
+                if track_determinant {
+                    det = det.neg()?;
+                }
             }
 
-            let pivot_scale = this[(col, row)].invert()?;
+            let pivot_scale = this[(col, row)].clone().invert()?;
 
             for clear in (row + 1)..this.height {
-                this.sub_row(row, clear, &this[(col, clear)].mul(&pivot_scale)?)?;
+                this.sub_row(
+                    row,
+                    clear,
+                    &this[(col, clear)].clone().mul(pivot_scale.clone())?,
+                )?;
+
+                // determinant not affected by this.
             }
 
             if reduced {
                 for clear in 0..row {
-                    this.sub_row(row, clear, &this[(col, clear)].mul(&pivot_scale)?)?;
+                    this.sub_row(
+                        row,
+                        clear,
+                        &this[(col, clear)].clone().mul(pivot_scale.clone())?,
+                    )?;
                 }
 
                 this.scale_row(row, &pivot_scale)?;
+
+                if track_determinant {
+                    det = det.mul(pivot_scale)?;
+                }
             }
 
             row += 1;
         }
 
-        Ok((this, end_col))
+        Ok((this, end_col, det))
     }
 
     #[doc(alias = "rref")]
     pub fn row_echelon_form(&self, reduced: bool) -> Result<Self> {
-        self.row_echelon_form_internal(reduced).map(|x| x.0)
+        self.row_echelon_form_internal(reduced, false).map(|x| x.0)
     }
 
     pub fn identity(width: usize) -> Result<Self> {
@@ -693,16 +757,23 @@ impl ConcreteMatrix {
         }
     }
 
-    pub fn invert(&self) -> Result<Self> {
-        let aug = self.aug_hor(&self.my_identity()?)?;
+    pub fn invert(self) -> Result<Self> {
+        if self.width != self.height {
+            return Err(crate::errors::MathError::MatrixNotSquare);
+        }
 
-        let (rref, last_col) = aug.row_echelon_form_internal(true)?;
+        let width = self.width;
+        let id = self.my_identity()?;
 
-        if last_col >= self.width {
+        let aug = self.aug_hor(id)?;
+
+        let (rref, last_col, _) = aug.row_echelon_form_internal(true, false)?;
+
+        if last_col >= width {
             return Err(crate::errors::MathError::MatrixNotInvertible);
         }
 
-        rref.select_cols(self.width..self.width * 2)
+        rref.select_cols(width..width * 2)
     }
 
     pub fn is_zero(&self) -> bool {
@@ -723,54 +794,58 @@ impl ConcreteMatrix {
         this
     }
 
-    pub fn conj(&self) -> Result<Self> {
+    pub fn conj(self) -> Result<Self> {
         Ok(Self {
             elems: self
                 .elems
-                .iter()
+                .into_iter()
                 .map(|x| x.conj())
                 .collect::<Result<Vec<_>>>()?,
-            ..*self
+            ..self
         })
     }
 
-    pub fn norm_sq(&self) -> Result<Value> {
+    pub fn norm_sq(self) -> Result<Value> {
         self.elems
-            .iter()
+            .into_iter()
             .map(|x| x.norm_sq())
-            .reduce(|x, y| x.and_then(|x| y.and_then(|y| x.add(&y))))
+            .reduce(|x, y| x.and_then(|x| y.and_then(|y| x.add(y))))
             .unwrap() // Option unwrap
     }
 
-    pub fn sin(&self) -> Result<Self> {
+    pub fn sin(self) -> Result<Self> {
         Err(crate::errors::MathError::NotImplemented)
     }
 
-    pub fn cos(&self) -> Result<Self> {
+    pub fn cos(self) -> Result<Self> {
         Err(crate::errors::MathError::NotImplemented)
     }
 
-    pub fn tan(&self) -> Result<Self> {
+    pub fn tan(self) -> Result<Self> {
         Err(crate::errors::MathError::NotImplemented)
     }
 
-    pub fn sinh(&self) -> Result<Self> {
+    pub fn sinh(self) -> Result<Self> {
         Err(crate::errors::MathError::NotImplemented)
     }
 
-    pub fn cosh(&self) -> Result<Self> {
+    pub fn cosh(self) -> Result<Self> {
         Err(crate::errors::MathError::NotImplemented)
     }
 
-    pub fn tanh(&self) -> Result<Self> {
+    pub fn tanh(self) -> Result<Self> {
         Err(crate::errors::MathError::NotImplemented)
     }
 
     // Matrix exponentiation through Sylvester's Formula
-    fn exp_inner(&self, eigenvalues: &[(Scalar, usize)]) -> Result<Self> {
+    fn exp_inner(self, eigenvalues: &[(Scalar, usize)]) -> Result<Self> {
+        let height = self.height;
+        let width = self.width;
+        let zero = self.zero_matrix();
+
         let mut coeff_matrix = Self {
             elems: Vec::with_capacity(self.elems.len()),
-            ..*self
+            ..self
         };
 
         let mut lambdas = Vec::with_capacity(self.width);
@@ -793,14 +868,14 @@ impl ConcreteMatrix {
 
             let power = Scalar::from_integer((n - k) as i128);
 
-            let power = lambda.pow(&power);
+            let power = lambda.pow(power);
 
             let coeff = binomial(n, k) * factorial(k);
 
             if coeff > i128::MAX as u128 {
-                Scalar::from_float(coeff as f64).mul(&power)
+                Scalar::from_float(coeff as f64).mul(power)
             } else {
-                Scalar::from_integer(coeff as i128).mul(&power)
+                Scalar::from_integer(coeff as i128).mul(power)
             }
         }
 
@@ -827,49 +902,49 @@ impl ConcreteMatrix {
         }
 
         let mut acc = self.clone();
-        for _ in 2..self.width {
-            acc = acc.mul(self)?;
+        for _ in 2..width {
+            acc = acc.mul(self.clone())?;
             powers.push(acc.clone());
         }
 
         // We solved M B = A for B where both B and A are vectors of matrices.
         // `powers` is `A`, and it contains `I, A, A^2, A^3, ...`.
         // We now compute:
-        let mut result = self.zero_matrix();
+        let mut result = zero.clone();
 
-        for row in 0..self.height {
+        for row in 0..height {
             let lambda_coeff = Value::Scalar(lambdas[row].exp());
 
-            let mut acc = self.zero_matrix();
+            let mut acc = zero.clone();
 
             for (power, coeff) in powers.iter().zip(inverted.iter_row(row)?) {
-                acc = acc.add(&power.scalar_mul(coeff)?)?;
+                acc = acc.add(power.clone().scalar_mul(coeff.clone())?)?;
             }
 
-            result = result.add(&acc.scalar_mul(&lambda_coeff)?)?;
+            result = result.add(acc.scalar_mul(lambda_coeff)?)?;
         }
 
         Ok(result)
     }
 
     // Householder matrix for given column vector
-    pub fn householder_matrix(&self) -> Result<Self> {
+    pub fn householder_matrix(self) -> Result<Self> {
         if self.width != 1 {
             return Err(crate::errors::MathError::NotColumnVector);
         }
 
-        let star = self.conj()?.transpose();
+        let star = self.clone().conj()?.transpose();
 
-        let numerator = self.mul(&star)?;
+        let numerator = self.clone().mul(star)?;
 
         let denominator = self.norm_sq()?;
 
-        numerator.my_identity()?.sub(
-            &numerator.scalar_mul(&Value::Scalar(Scalar::from_integer(2)).div(&denominator)?)?,
-        )
+        numerator
+            .my_identity()?
+            .sub(numerator.scalar_mul(Value::Scalar(Scalar::from_integer(2)).div(denominator)?)?)
     }
 
-    pub fn lower_hessenberg(&self) -> Result<Self> {
+    pub fn lower_hessenberg(mut self) -> Result<Self> {
         if self.width != self.height {
             return Err(crate::errors::MathError::MatrixNotSquare);
         }
@@ -884,16 +959,16 @@ impl ConcreteMatrix {
         for i in 0..self.width - 2 {
             let col = rectangle.get_col(0)?;
 
-            let vector = col.my_basis_elem(0)?.scalar_mul(&col.norm_sq()?)?;
-            let vector = vector.sub(&col)?;
+            let vector = col.my_basis_elem(0)?.scalar_mul(col.clone().norm_sq()?)?;
+            let vector = vector.sub(col)?;
 
             let householder = vector.householder_matrix()?;
 
-            let matrix = Self::identity(i + 1)?.aug_diag(&householder);
+            let matrix = Self::identity(i + 1)?.aug_diag(householder);
 
-            prod_acc = matrix.mul(&prod_acc)?;
+            prod_acc = matrix.mul(prod_acc)?;
 
-            rectangle = rectangle.remove_col_row(0, 0)?;
+            rectangle.remove_col_row(0, 0)?;
         }
 
         prod_acc.mul(self)
@@ -908,10 +983,12 @@ impl ConcreteMatrix {
         let mut factorial_acc = 1;
         for i in 2..12 {
             acc = acc.add(
-                &prod_acc.scalar_mul(&Value::Scalar(Scalar::from_num_denom(1, factorial_acc)))?,
+                prod_acc
+                    .clone()
+                    .scalar_mul(Value::Scalar(Scalar::from_num_denom(1, factorial_acc)))?,
             )?;
 
-            prod_acc = prod_acc.mul(self)?;
+            prod_acc = prod_acc.mul(self.clone())?;
             factorial_acc *= i;
         }
 
