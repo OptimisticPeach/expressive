@@ -1,7 +1,7 @@
-mod errors;
-mod function;
-mod matrix;
-mod scalar;
+pub mod errors;
+pub mod function;
+pub mod matrix;
+pub mod scalar;
 
 use errors::Result;
 use matrix::Matrix;

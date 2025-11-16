@@ -19,4 +19,5 @@ pub enum MathError {
     WrongNumberOfArgs,
     UnsupportedMatrixOp,
     CannotDeduceDimensions,
+    UnknownVariable,
 }

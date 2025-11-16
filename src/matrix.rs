@@ -96,6 +96,12 @@ impl Floatify for Matrix {
 }
 
 impl Matrix {
+    pub const IDENTITY: Self = Matrix::Identity {
+        concrete: ConcreteMatrix::EMPTY,
+        scale: None,
+    };
+    pub const ZERO: Self = Matrix::UnboundedSize(ConcreteMatrix::EMPTY);
+
     // These three probably don't make sense?
     // pub fn iter(&self) -> impl Iterator<Item = (usize, usize, &Value)> {}
 

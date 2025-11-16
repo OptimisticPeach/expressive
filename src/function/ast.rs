@@ -1,25 +1,26 @@
-use crate::{Matrix, Value, errors::*, scalar::Scalar};
+use crate::{
+    Matrix, Value,
+    errors::*,
+    function::{EnvScope, Ident},
+    scalar::Scalar,
+};
 
 pub enum Nilary {
     Integer(i128),
     ImaginaryUnit,
-    Identity { size: Option<usize> },
-    Variable,
+    IdentityMatrix,
+    ZeroMatrix,
+    Named(Ident),
 }
 
 impl Nilary {
-    pub fn eval(&self) -> Result<Value> {
+    pub fn eval(&self, scope: &mut EnvScope) -> Result<Value> {
         match self {
             Nilary::Integer(i) => Ok(Value::Scalar(Scalar::from_integer(*i))),
             Nilary::ImaginaryUnit => Ok(Value::Scalar(Scalar::IMAG)),
-            &Nilary::Identity { size } => {
-                if let Some(size) = size {
-                    Matrix::identity(Some(size)).map(Value::Matrix)
-                } else {
-                    todo!()
-                }
-            }
-            Nilary::Variable => todo!(),
+            Nilary::IdentityMatrix => Ok(Value::Matrix(Matrix::IDENTITY)),
+            Nilary::ZeroMatrix => Ok(Value::Matrix(Matrix::ZERO)),
+            Nilary::Named(id) => scope.retrieve(*id).ok_or(MathError::UnknownVariable),
         }
     }
 }
@@ -121,13 +122,18 @@ impl Ast {
         Ok(())
     }
 
-    pub fn eval(&self) -> Result<Value> {
+    pub fn eval(&self, scope: &mut EnvScope) -> Result<Value> {
         match (&self.function, &self.args[..]) {
-            (Function::Nilary(nil), []) => nil.eval(),
-            (Function::Unary(unary), [val]) => unary.eval(val.eval()?),
-            (Function::Binary(binary), [lhs, rhs]) => binary.eval(lhs.eval()?, rhs.eval()?),
+            (Function::Nilary(nil), []) => nil.eval(scope),
+            (Function::Unary(unary), [val]) => unary.eval(val.eval(scope)?),
+            (Function::Binary(binary), [lhs, rhs]) => {
+                binary.eval(lhs.eval(scope)?, rhs.eval(scope)?)
+            }
             (Function::Variadic(variadic), vals) => {
-                let vals = vals.iter().map(|x| x.eval()).collect::<Result<Vec<_>>>()?;
+                let vals = vals
+                    .iter()
+                    .map(|x| x.eval(scope))
+                    .collect::<Result<Vec<_>>>()?;
                 variadic.eval(&vals)
             }
 
