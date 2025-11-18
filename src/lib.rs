@@ -7,6 +7,8 @@ use errors::Result;
 use matrix::Matrix;
 use scalar::Scalar;
 
+use crate::function::ast::Function;
+
 trait Floatify {
     type Floated;
 
@@ -17,6 +19,7 @@ trait Floatify {
 pub enum Value {
     Scalar(Scalar),
     Matrix(Matrix),
+    Lambda(Function),
 }
 
 impl Default for Value {

@@ -5,6 +5,7 @@ use crate::{
     scalar::Scalar,
 };
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum Nilary {
     Integer(i128),
     ImaginaryUnit,
@@ -20,11 +21,12 @@ impl Nilary {
             Nilary::ImaginaryUnit => Ok(Value::Scalar(Scalar::IMAG)),
             Nilary::IdentityMatrix => Ok(Value::Matrix(Matrix::IDENTITY)),
             Nilary::ZeroMatrix => Ok(Value::Matrix(Matrix::ZERO)),
-            Nilary::Named(id) => scope.retrieve(*id).ok_or(MathError::UnknownVariable),
+            Nilary::Named(id) => scope.retrieve(*id),
         }
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum Unary {
     Neg,
     Exp,
@@ -57,6 +59,7 @@ impl Unary {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum Binary {
     Add,
     Sub,
@@ -66,6 +69,7 @@ pub enum Binary {
     Or,
     Xor,
     // powers?
+    Apply,
 }
 
 impl Binary {
@@ -78,10 +82,13 @@ impl Binary {
             Binary::And => a.and(b),
             Binary::Or => a.or(b),
             Binary::Xor => a.xor(b),
+
+            Binary::Apply => a.apply(b),
         }
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum Variadic {
     MatrixCtor { width: usize, height: usize },
 }
@@ -96,6 +103,7 @@ impl Variadic {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum Function {
     Nilary(Nilary),
     Unary(Unary),

@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
 use crate::Value;
+use crate::errors::Result;
+use crate::function::ast::Function;
 
 pub mod ast;
 
@@ -13,12 +15,33 @@ pub struct Env {
     pub str_to_id: HashMap<String, Ident>,
     pub id_to_str: Vec<String>,
 
-    pub globals: Vec<HashMap<Ident, Ast>>,
+    pub globals: HashMap<Ident, Global>,
 
     pub scopes: Vec<HashMap<Ident, Value>>,
 }
 
 impl Env {
+    pub fn empty() -> Self {
+        Self {
+            str_to_id: HashMap::new(),
+            id_to_str: Vec::new(),
+
+            globals: HashMap::new(),
+
+            scopes: Vec::new(),
+        }
+    }
+
+    pub fn define_variable(&mut self, name: String, ast: Ast) {
+        let ident = self.ident(name);
+        self.globals.insert(ident, Global::Variable(ast));
+    }
+
+    pub fn define_builtin(&mut self, name: String, function: Function) {
+        let ident = self.ident(name);
+        self.globals.insert(ident, Global::Function(function));
+    }
+
     pub fn ident(&mut self, s: String) -> Ident {
         *self
             .str_to_id
@@ -27,20 +50,20 @@ impl Env {
     }
 
     pub fn scope(&'_ mut self) -> EnvScope<'_> {
-        EnvScope::new(&mut self.scopes, &mut self.globals)
+        EnvScope::new(&mut self.scopes, &self.globals)
     }
 }
 
 pub struct EnvScope<'a> {
     scopes: &'a mut Vec<HashMap<Ident, Value>>,
 
-    globals: &'a mut Vec<HashMap<Ident, ast::Ast>>,
+    globals: &'a HashMap<Ident, Global>,
 }
 
 impl<'a> EnvScope<'a> {
     fn new(
         scopes: &'a mut Vec<HashMap<Ident, Value>>,
-        globals: &'a mut Vec<HashMap<Ident, Ast>>,
+        globals: &'a HashMap<Ident, Global>,
     ) -> Self {
         scopes.push(HashMap::new());
 
@@ -53,21 +76,37 @@ impl<'a> EnvScope<'a> {
         Self::new(self.scopes, self.globals)
     }
 
-    pub fn retrieve(&self, ident: Ident) -> Option<Value> {
+    pub fn retrieve(&mut self, ident: Ident) -> Result<Value> {
         for scope in self.scopes.iter().rev() {
-            let result = scope.get(&ident);
-
-            if result.is_some() {
-                return result.cloned();
+            if let Some(x) = scope.get(&ident) {
+                return Ok(x.clone());
             }
         }
 
-        None
+        if let Some(ast) = self.globals.get(&ident) {
+            ast.eval(self)
+        } else {
+            Err(crate::errors::MathError::UnknownVariable)
+        }
     }
 }
 
 impl<'a> Drop for EnvScope<'a> {
     fn drop(&mut self) {
         self.scopes.pop();
+    }
+}
+
+pub enum Global {
+    Variable(Ast),
+    Function(Function),
+}
+
+impl Global {
+    pub fn eval(&self, scope: &mut EnvScope<'_>) -> Result<Value> {
+        match self {
+            Global::Variable(ast) => ast.eval(scope),
+            Global::Function(function) => Ok(Value::Lambda(function.clone())),
+        }
     }
 }
