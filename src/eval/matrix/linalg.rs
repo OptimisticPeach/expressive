@@ -1,14 +1,10 @@
 // todo: handle empty cases in all functions
-#![allow(dead_code)]
 
 use std::ops::{Index, IndexMut};
 
-use crate::Floatify;
-
 use crate::errors::Result;
-use crate::scalar::Scalar;
-
-use super::Value;
+use crate::eval::scalar::Scalar;
+use crate::eval::value::EvalAst;
 
 /// Matrix stored in column-major format:
 /// [ 0 3 6 ]
@@ -16,33 +12,21 @@ use super::Value;
 /// [ 2 5 8 ]
 #[derive(Clone, Debug, PartialEq)]
 pub struct ConcreteMatrix {
-    pub(crate) elems: Vec<Value>,
+    pub(crate) elems: Vec<EvalAst>,
     pub width: usize,
     pub height: usize,
 }
 
-impl Floatify for ConcreteMatrix {
-    type Floated = Self;
-
-    fn floatify(mut self) -> Self::Floated {
-        self.elems
-            .iter_mut()
-            .for_each(|x| *x = x.clone().floatify());
-
-        self
-    }
-}
-
 impl Index<(usize, usize)> for ConcreteMatrix {
-    type Output = Value;
+    type Output = EvalAst;
 
-    fn index(&self, (col, row): (usize, usize)) -> &Value {
+    fn index(&self, (col, row): (usize, usize)) -> &EvalAst {
         &self.elems[row + col * self.height]
     }
 }
 
 impl IndexMut<(usize, usize)> for ConcreteMatrix {
-    fn index_mut(&mut self, (col, row): (usize, usize)) -> &mut Value {
+    fn index_mut(&mut self, (col, row): (usize, usize)) -> &mut EvalAst {
         &mut self.elems[row + col * self.height]
     }
 }
@@ -58,21 +42,21 @@ impl ConcreteMatrix {
         row + col * self.height
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (usize, usize, &Value)> {
+    pub fn iter(&self) -> impl Iterator<Item = (usize, usize, &EvalAst)> {
         self.elems
             .iter()
             .enumerate()
             .map(|(idx, val)| (idx / self.height, idx % self.height, val))
     }
 
-    pub fn into_iter(self) -> impl Iterator<Item = (usize, usize, Value)> {
+    pub fn into_iter(self) -> impl Iterator<Item = (usize, usize, EvalAst)> {
         self.elems
             .into_iter()
             .enumerate()
             .map(move |(idx, val)| (idx / self.height, idx % self.height, val))
     }
 
-    pub fn iter_col(&self, col: usize) -> Result<impl Iterator<Item = &Value>> {
+    pub fn iter_col(&self, col: usize) -> Result<impl Iterator<Item = &EvalAst>> {
         if col >= self.width {
             return Err(crate::errors::MathError::MatrixOutOfRange);
         }
@@ -80,7 +64,7 @@ impl ConcreteMatrix {
         Ok((0..self.height).map(move |y| &self[(col, y)]))
     }
 
-    pub fn iter_row(&self, row: usize) -> Result<impl Iterator<Item = &Value>> {
+    pub fn iter_row(&self, row: usize) -> Result<impl Iterator<Item = &EvalAst>> {
         if row >= self.height {
             return Err(crate::errors::MathError::MatrixOutOfRange);
         }
@@ -174,7 +158,7 @@ impl ConcreteMatrix {
         Ok(())
     }
 
-    pub fn det(mut self) -> Result<Value> {
+    pub fn det(mut self) -> Result<EvalAst> {
         if self.width != self.height {
             return Err(crate::errors::MathError::NonSquareDeterminant);
         }
@@ -189,13 +173,13 @@ impl ConcreteMatrix {
         }
     }
 
-    fn gaussian_det(self) -> Result<Value> {
+    fn gaussian_det(self) -> Result<EvalAst> {
         let (mut val, _pivots, det_scl) = self.row_echelon_form_internal(false, true)?;
 
         let mut det = det_scl;
 
         for i in 0..val.width {
-            let value = std::mem::replace(&mut val[(i, i)], Value::ZERO);
+            let value = std::mem::replace(&mut val[(i, i)], EvalAst::ZERO);
 
             det = det.mul(value)?;
         }
@@ -259,7 +243,7 @@ impl ConcreteMatrix {
         Ok(this)
     }
 
-    pub fn ext_vert(self, value: Value, extra_rows: usize) -> Self {
+    pub fn ext_vert(self, value: EvalAst, extra_rows: usize) -> Self {
         let mut this = Self {
             elems: Vec::with_capacity((self.height + extra_rows) * self.width),
             width: self.width,
@@ -293,7 +277,7 @@ impl ConcreteMatrix {
         Ok(this)
     }
 
-    pub fn ext_hor(self, value: Value, extra_cols: usize) -> Self {
+    pub fn ext_hor(self, value: EvalAst, extra_cols: usize) -> Self {
         let mut this = Self {
             elems: self.elems,
             width: self.width + extra_cols,
@@ -323,14 +307,14 @@ impl ConcreteMatrix {
             this.elems.extend((&mut me).take(self.height));
 
             this.elems
-                .extend(std::iter::repeat_n(Value::ZERO, bottom_right.height));
+                .extend(std::iter::repeat_n(EvalAst::ZERO, bottom_right.height));
         }
 
         let mut other = bottom_right.elems.into_iter();
 
         for _ in 0..bottom_right.width {
             this.elems
-                .extend(std::iter::repeat_n(Value::ZERO, self.height));
+                .extend(std::iter::repeat_n(EvalAst::ZERO, self.height));
 
             this.elems.extend((&mut other).take(bottom_right.height));
         }
@@ -338,7 +322,7 @@ impl ConcreteMatrix {
         this
     }
 
-    pub fn ext_diag(self, value: Value, extra_cols: usize, extra_rows: usize) -> Self {
+    pub fn ext_diag(self, value: EvalAst, extra_cols: usize, extra_rows: usize) -> Self {
         let width = self.width + extra_cols;
         let height = self.height + extra_rows;
 
@@ -393,7 +377,7 @@ impl ConcreteMatrix {
     pub fn hadamard_op(
         self,
         rhs: Self,
-        mut op: impl FnMut(Value, Value) -> Result<Value>,
+        mut op: impl FnMut(EvalAst, EvalAst) -> Result<EvalAst>,
     ) -> Result<Self> {
         if self.width != rhs.width || self.height != rhs.height {
             return Err(crate::errors::MathError::MatrixShapeMismatch);
@@ -410,7 +394,7 @@ impl ConcreteMatrix {
         })
     }
 
-    pub fn scalar_mul(self, rhs: Value) -> Result<Self> {
+    pub fn scalar_mul(self, rhs: EvalAst) -> Result<Self> {
         Ok(Self {
             elems: self
                 .elems
@@ -476,7 +460,7 @@ impl ConcreteMatrix {
         Ok(this)
     }
 
-    pub fn from_size_slice_rowmaj(width: usize, height: usize, values: &[Value]) -> Result<Self> {
+    pub fn from_size_slice_rowmaj(width: usize, height: usize, values: &[EvalAst]) -> Result<Self> {
         if values.len() != width * height {
             Err(crate::errors::MathError::WrongNumberOfArgs)?;
         }
@@ -496,7 +480,7 @@ impl ConcreteMatrix {
         Ok(this)
     }
 
-    pub fn from_size_slice_colmaj(width: usize, height: usize, values: &[Value]) -> Result<Self> {
+    pub fn from_size_slice_colmaj(width: usize, height: usize, values: &[EvalAst]) -> Result<Self> {
         if values.len() != width * height {
             Err(crate::errors::MathError::WrongNumberOfArgs)?;
         }
@@ -511,15 +495,15 @@ impl ConcreteMatrix {
     }
 
     pub fn add(self, rhs: Self) -> Result<Self> {
-        self.hadamard_op(rhs, Value::add)
+        self.hadamard_op(rhs, EvalAst::add)
     }
 
     pub fn sub(self, rhs: Self) -> Result<Self> {
-        self.hadamard_op(rhs, Value::sub)
+        self.hadamard_op(rhs, EvalAst::sub)
     }
 
     pub fn mul_componentwise(self, rhs: ConcreteMatrix) -> Result<Self> {
-        self.hadamard_op(rhs, Value::mul)
+        self.hadamard_op(rhs, EvalAst::mul)
     }
 
     pub fn neg(self) -> Result<Self> {
@@ -552,13 +536,13 @@ impl ConcreteMatrix {
         Ok(())
     }
 
-    fn scale_row(&mut self, row: usize, value: &Value) -> Result<()> {
+    fn scale_row(&mut self, row: usize, value: &EvalAst) -> Result<()> {
         if row >= self.height {
             return Err(crate::errors::MathError::MatrixOutOfRange);
         }
 
         for i in 0..self.width {
-            let mut elem = Value::ZERO;
+            let mut elem = EvalAst::ZERO;
 
             std::mem::swap(&mut self[(i, row)], &mut elem);
 
@@ -569,13 +553,13 @@ impl ConcreteMatrix {
     }
 
     // Rdest -= scale * src
-    fn sub_row(&mut self, src: usize, dest: usize, scale: &Value) -> Result<()> {
+    fn sub_row(&mut self, src: usize, dest: usize, scale: &EvalAst) -> Result<()> {
         if src >= self.height || dest >= self.height {
             return Err(crate::errors::MathError::MatrixOutOfRange);
         }
 
         for i in 0..self.width {
-            let mut elem = Value::ZERO;
+            let mut elem = EvalAst::ZERO;
 
             std::mem::swap(&mut self[(i, dest)], &mut elem);
 
@@ -589,8 +573,8 @@ impl ConcreteMatrix {
         &self,
         reduced: bool,
         track_determinant: bool,
-    ) -> Result<(Self, usize, Value)> {
-        let mut det = Value::ONE;
+    ) -> Result<(Self, usize, EvalAst)> {
+        let mut det = EvalAst::ONE;
 
         let mut this = self.clone();
 
@@ -672,7 +656,7 @@ impl ConcreteMatrix {
                 .map(move |x| (0..width).map(move |y| (x, y)))
                 .flatten()
                 .map(|(x, y)| if x == y { Scalar::ONE } else { Scalar::ZERO })
-                .map(Value::Scalar)
+                .map(EvalAst::Scalar)
                 .collect(),
             width,
             height: width,
@@ -691,7 +675,7 @@ impl ConcreteMatrix {
         this
     }
 
-    pub fn col_from_iter(iter: impl IntoIterator<Item = Value>) -> Self {
+    pub fn col_from_iter(iter: impl IntoIterator<Item = EvalAst>) -> Self {
         let elems = Vec::from_iter(iter);
 
         let height = elems.len();
@@ -703,7 +687,7 @@ impl ConcreteMatrix {
         }
     }
 
-    pub fn row_from_iter(iter: impl IntoIterator<Item = Value>) -> Self {
+    pub fn row_from_iter(iter: impl IntoIterator<Item = EvalAst>) -> Self {
         let elems = Vec::from_iter(iter);
 
         let width = elems.len();
@@ -723,11 +707,11 @@ impl ConcreteMatrix {
             }
 
             let mut result = Self::col_from_iter(std::iter::repeat_n(
-                Value::Scalar(Scalar::ZERO),
+                EvalAst::Scalar(Scalar::ZERO),
                 self.height,
             ));
 
-            result.elems[elem] = Value::Scalar(Scalar::ONE);
+            result.elems[elem] = EvalAst::Scalar(Scalar::ONE);
 
             Ok(result)
         } else if self.height == 1 {
@@ -736,11 +720,11 @@ impl ConcreteMatrix {
             }
 
             let mut result = Self::row_from_iter(std::iter::repeat_n(
-                Value::Scalar(Scalar::ZERO),
+                EvalAst::Scalar(Scalar::ZERO),
                 self.height,
             ));
 
-            result.elems[elem] = Value::Scalar(Scalar::ONE);
+            result.elems[elem] = EvalAst::Scalar(Scalar::ONE);
 
             Ok(result)
         } else {
@@ -751,7 +735,7 @@ impl ConcreteMatrix {
     pub fn zero_matrix(&self) -> Self {
         Self {
             elems: std::iter::repeat_n(Scalar::ZERO, self.elems.len())
-                .map(Value::Scalar)
+                .map(EvalAst::Scalar)
                 .collect(),
             ..*self
         }
@@ -805,7 +789,7 @@ impl ConcreteMatrix {
         })
     }
 
-    pub fn norm_sq(self) -> Result<Value> {
+    pub fn norm_sq(self) -> Result<EvalAst> {
         self.elems
             .into_iter()
             .map(|x| x.norm_sq())
@@ -887,7 +871,7 @@ impl ConcreteMatrix {
             for row in 0..self.height {
                 coeff_matrix
                     .elems
-                    .push(Value::Scalar(make_coeff(row, power, lambda)));
+                    .push(EvalAst::Scalar(make_coeff(row, power, lambda)));
             }
         }
 
@@ -913,7 +897,7 @@ impl ConcreteMatrix {
         let mut result = zero.clone();
 
         for row in 0..height {
-            let lambda_coeff = Value::Scalar(lambdas[row].exp());
+            let lambda_coeff = EvalAst::Scalar(lambdas[row].exp());
 
             let mut acc = zero.clone();
 
@@ -941,7 +925,7 @@ impl ConcreteMatrix {
 
         numerator
             .my_identity()?
-            .sub(numerator.scalar_mul(Value::Scalar(Scalar::from_integer(2)).div(denominator)?)?)
+            .sub(numerator.scalar_mul(EvalAst::Scalar(Scalar::from_integer(2)).div(denominator)?)?)
     }
 
     pub fn lower_hessenberg(mut self) -> Result<Self> {
@@ -985,7 +969,7 @@ impl ConcreteMatrix {
             acc = acc.add(
                 prod_acc
                     .clone()
-                    .scalar_mul(Value::Scalar(Scalar::from_num_denom(1, factorial_acc)))?,
+                    .scalar_mul(EvalAst::Scalar(Scalar::from_num_denom(1, factorial_acc)))?,
             )?;
 
             prod_acc = prod_acc.mul(self.clone())?;

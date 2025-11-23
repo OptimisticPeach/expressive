@@ -1,8 +1,8 @@
 pub mod linalg;
 
 use crate::{
-    Floatify, Value,
     errors::{MathError, Result},
+    eval::EvalAst,
 };
 use linalg::ConcreteMatrix;
 
@@ -47,7 +47,7 @@ pub enum Matrix {
         concrete: ConcreteMatrix,
 
         // boxed to not be a recursive def
-        scale: Option<Box<Value>>,
+        scale: Option<Box<EvalAst>>,
     },
 
     /// Matrix with a known number of columns.
@@ -72,29 +72,6 @@ pub enum Matrix {
     UnboundedSize(ConcreteMatrix),
 }
 
-impl Floatify for Matrix {
-    type Floated = Self;
-
-    fn floatify(mut self) -> Self::Floated {
-        match self {
-            Matrix::Concrete(ref mut concrete)
-            | Matrix::UnboundedHeight(ref mut concrete)
-            | Matrix::UnboundedWidth(ref mut concrete)
-            | Matrix::UnboundedSize(ref mut concrete) => {
-                let mut temp = ConcreteMatrix::EMPTY;
-                std::mem::swap(&mut temp, concrete);
-                *concrete = temp.floatify();
-
-                self
-            }
-            Matrix::Identity { concrete, scale } => Matrix::Identity {
-                concrete: concrete.floatify(),
-                scale: scale.map(|x| Box::new(x.floatify())),
-            },
-        }
-    }
-}
-
 impl Matrix {
     pub const IDENTITY: Self = Matrix::Identity {
         concrete: ConcreteMatrix::EMPTY,
@@ -103,11 +80,11 @@ impl Matrix {
     pub const ZERO: Self = Matrix::UnboundedSize(ConcreteMatrix::EMPTY);
 
     // These three probably don't make sense?
-    // pub fn iter(&self) -> impl Iterator<Item = (usize, usize, &Value)> {}
+    // pub fn iter(&self) -> impl Iterator<Item = (usize, usize, &EvalAst)> {}
 
-    // pub fn iter_col(&self, col: usize) -> Result<impl Iterator<Item = &Value>> {}
+    // pub fn iter_col(&self, col: usize) -> Result<impl Iterator<Item = &EvalAst>> {}
 
-    // pub fn iter_row(&self, row: usize) -> Result<impl Iterator<Item = &Value>> {}
+    // pub fn iter_row(&self, row: usize) -> Result<impl Iterator<Item = &EvalAst>> {}
 
     pub fn remove_col(&mut self, col: usize) -> Result<Self> {
         match self {
@@ -265,9 +242,9 @@ impl Matrix {
             Matrix::Identity { concrete, scale } => {
                 let delta = height - concrete.height;
 
-                let mut result = concrete.ext_diag(Value::ZERO, delta, delta);
+                let mut result = concrete.ext_diag(EvalAst::ZERO, delta, delta);
 
-                let one = scale.clone().map(|x| *x).unwrap_or(Value::ONE);
+                let one = scale.clone().map(|x| *x).unwrap_or(EvalAst::ONE);
 
                 for i in height - delta..height {
                     result[(i, i)] = one.clone();
@@ -279,11 +256,11 @@ impl Matrix {
                 })
             }
             Matrix::UnboundedHeight(concrete_matrix) => Some(Matrix::UnboundedHeight(
-                concrete_matrix.ext_vert(Value::ZERO, height - cur_height),
+                concrete_matrix.ext_vert(EvalAst::ZERO, height - cur_height),
             )),
 
             Matrix::UnboundedSize(concrete_matrix) => Some(Matrix::UnboundedSize(
-                concrete_matrix.ext_vert(Value::ZERO, height - cur_height),
+                concrete_matrix.ext_vert(EvalAst::ZERO, height - cur_height),
             )),
         }
     }
@@ -309,9 +286,9 @@ impl Matrix {
             Matrix::Identity { concrete, scale } => {
                 let delta = width - concrete.width;
 
-                let mut result = concrete.ext_diag(Value::ZERO, delta, delta);
+                let mut result = concrete.ext_diag(EvalAst::ZERO, delta, delta);
 
-                let one = scale.clone().map(|x| *x).unwrap_or(Value::ONE);
+                let one = scale.clone().map(|x| *x).unwrap_or(EvalAst::ONE);
 
                 for i in width - delta..width {
                     result[(i, i)] = one.clone();
@@ -323,11 +300,11 @@ impl Matrix {
                 })
             }
             Matrix::UnboundedWidth(concrete_matrix) => Some(Matrix::UnboundedWidth(
-                concrete_matrix.ext_hor(Value::ZERO, width - cur_width),
+                concrete_matrix.ext_hor(EvalAst::ZERO, width - cur_width),
             )),
 
             Matrix::UnboundedSize(concrete_matrix) => Some(Matrix::UnboundedSize(
-                concrete_matrix.ext_hor(Value::ZERO, width - cur_width),
+                concrete_matrix.ext_hor(EvalAst::ZERO, width - cur_width),
             )),
         }
     }
@@ -363,9 +340,9 @@ impl Matrix {
                     return None;
                 }
 
-                let mut result = concrete.ext_diag(Value::ZERO, delta_x, delta_x);
+                let mut result = concrete.ext_diag(EvalAst::ZERO, delta_x, delta_x);
 
-                let one = scale.clone().map(|x| *x).unwrap_or(Value::ONE);
+                let one = scale.clone().map(|x| *x).unwrap_or(EvalAst::ONE);
 
                 for i in width - delta_x..width {
                     result[(i, i)] = one.clone();
@@ -377,12 +354,12 @@ impl Matrix {
                 })
             }
             Matrix::UnboundedSize(concrete_matrix) => Some(Matrix::UnboundedSize(
-                concrete_matrix.ext_diag(Value::ZERO, delta_x, delta_y),
+                concrete_matrix.ext_diag(EvalAst::ZERO, delta_x, delta_y),
             )),
         }
     }
 
-    pub fn det(self) -> Result<Value> {
+    pub fn det(self) -> Result<EvalAst> {
         let width = self.min_width();
         let height = self.min_height();
 
@@ -393,7 +370,7 @@ impl Matrix {
                 unreachable!();
             };
 
-            return Ok(scale.clone().map(|x| *x).unwrap_or(Value::ONE));
+            return Ok(scale.clone().map(|x| *x).unwrap_or(EvalAst::ONE));
         }
 
         let dim = width.max(height);
@@ -408,7 +385,7 @@ impl Matrix {
             Matrix::Concrete(concrete_matrix) => concrete_matrix.get_col(col).map(Self::Concrete),
             Matrix::Identity { concrete, scale } => {
                 if col >= concrete.width {
-                    Self::vector_basis_elem(col, scale.clone().map(|x| *x).unwrap_or(Value::ZERO))
+                    Self::vector_basis_elem(col, scale.clone().map(|x| *x).unwrap_or(EvalAst::ZERO))
                 } else {
                     concrete.get_col(col).map(Self::UnboundedHeight)
                 }
@@ -419,7 +396,7 @@ impl Matrix {
             Matrix::UnboundedWidth(concrete_matrix) => {
                 if col > concrete_matrix.width {
                     Ok(Self::Concrete(ConcreteMatrix::col_from_iter(
-                        std::iter::repeat_n(Value::ZERO, concrete_matrix.height),
+                        std::iter::repeat_n(EvalAst::ZERO, concrete_matrix.height),
                     )))
                 } else {
                     concrete_matrix.get_col(col).map(Self::Concrete)
@@ -428,7 +405,7 @@ impl Matrix {
             Matrix::UnboundedSize(concrete_matrix) => {
                 if col > concrete_matrix.width {
                     Ok(Self::UnboundedHeight(ConcreteMatrix::col_from_iter(
-                        std::iter::repeat_n(Value::ZERO, concrete_matrix.height),
+                        std::iter::repeat_n(EvalAst::ZERO, concrete_matrix.height),
                     )))
                 } else {
                     concrete_matrix.get_col(col).map(Self::UnboundedHeight)
@@ -444,7 +421,7 @@ impl Matrix {
                 if row >= concrete.width {
                     Self::transpose_basis_elem(
                         row,
-                        scale.clone().map(|x| *x).unwrap_or(Value::ZERO),
+                        scale.clone().map(|x| *x).unwrap_or(EvalAst::ZERO),
                     )
                 } else {
                     concrete.get_row(row).map(Self::UnboundedWidth)
@@ -453,7 +430,7 @@ impl Matrix {
             Matrix::UnboundedHeight(concrete_matrix) => {
                 if row > concrete_matrix.height {
                     Ok(Self::Concrete(ConcreteMatrix::col_from_iter(
-                        std::iter::repeat_n(Value::ZERO, concrete_matrix.width),
+                        std::iter::repeat_n(EvalAst::ZERO, concrete_matrix.width),
                     )))
                 } else {
                     concrete_matrix.get_row(row).map(Self::Concrete)
@@ -465,7 +442,7 @@ impl Matrix {
             Matrix::UnboundedSize(concrete_matrix) => {
                 if row > concrete_matrix.height {
                     Ok(Self::UnboundedHeight(ConcreteMatrix::row_from_iter(
-                        std::iter::repeat_n(Value::ZERO, concrete_matrix.width),
+                        std::iter::repeat_n(EvalAst::ZERO, concrete_matrix.width),
                     )))
                 } else {
                     concrete_matrix.get_row(row).map(Self::UnboundedWidth)
@@ -700,7 +677,7 @@ impl Matrix {
         Ok(wrapper(result))
     }
 
-    pub fn scalar_mul(mut self, rhs: Value) -> Result<Self> {
+    pub fn scalar_mul(mut self, rhs: EvalAst) -> Result<Self> {
         let mat = std::mem::replace(self.best_guess_mut(), ConcreteMatrix::EMPTY);
 
         let result = mat.scalar_mul(rhs.clone())?;
@@ -719,11 +696,11 @@ impl Matrix {
         Ok(result)
     }
 
-    pub fn from_size_slice_rowmaj(width: usize, height: usize, values: &[Value]) -> Result<Self> {
+    pub fn from_size_slice_rowmaj(width: usize, height: usize, values: &[EvalAst]) -> Result<Self> {
         ConcreteMatrix::from_size_slice_rowmaj(width, height, values).map(Matrix::Concrete)
     }
 
-    pub fn from_size_slice_colmaj(width: usize, height: usize, values: &[Value]) -> Result<Self> {
+    pub fn from_size_slice_colmaj(width: usize, height: usize, values: &[EvalAst]) -> Result<Self> {
         ConcreteMatrix::from_size_slice_colmaj(width, height, values).map(Matrix::Concrete)
     }
 
@@ -731,7 +708,7 @@ impl Matrix {
         mut self,
         mut rhs: Self,
         op: impl FnOnce(ConcreteMatrix, ConcreteMatrix) -> Result<ConcreteMatrix>,
-        id_op: impl FnOnce(Value, Value) -> Result<Value>,
+        id_op: impl FnOnce(EvalAst, EvalAst) -> Result<EvalAst>,
     ) -> Result<Self> {
         // we need to get `self`'s dimensions and `rhs`'s dimensions to agree.
 
@@ -782,16 +759,16 @@ impl Matrix {
                     },
                 ) => {
                     let scale = id_op(
-                        scale_me.map(|x| *x).unwrap_or(Value::ONE),
-                        scale_rh.map(|x| *x).unwrap_or(Value::ONE),
+                        scale_me.map(|x| *x).unwrap_or(EvalAst::ONE),
+                        scale_rh.map(|x| *x).unwrap_or(EvalAst::ONE),
                     )?;
 
-                    if scale == Value::ONE {
+                    if scale == EvalAst::ONE {
                         Matrix::Identity {
                             concrete: matrix_result,
                             scale: None,
                         }
-                    } else if scale == Value::ZERO {
+                    } else if scale == EvalAst::ZERO {
                         Matrix::UnboundedSize(matrix_result)
                     } else {
                         Matrix::Identity {
@@ -849,8 +826,8 @@ impl Matrix {
                 concrete_matrix.neg().map(Matrix::UnboundedSize)
             }
             Matrix::Identity { concrete, scale } => {
-                let scale = scale.map(|x| *x).unwrap_or(Value::ONE).neg()?;
-                let scale = if scale == Value::ONE {
+                let scale = scale.map(|x| *x).unwrap_or(EvalAst::ONE).neg()?;
+                let scale = if scale == EvalAst::ONE {
                     None
                 } else {
                     Some(Box::new(scale))
@@ -881,8 +858,8 @@ impl Matrix {
         }
     }
 
-    pub fn vector_basis_elem(row: usize, one: Value) -> Result<Self> {
-        let mut elems = vec![Value::ZERO; row];
+    pub fn vector_basis_elem(row: usize, one: EvalAst) -> Result<Self> {
+        let mut elems = vec![EvalAst::ZERO; row];
 
         *elems.last_mut().ok_or(MathError::EmptyMatrix)? = one;
 
@@ -893,8 +870,8 @@ impl Matrix {
         }))
     }
 
-    pub fn transpose_basis_elem(col: usize, one: Value) -> Result<Self> {
-        let mut elems = vec![Value::ZERO; col];
+    pub fn transpose_basis_elem(col: usize, one: EvalAst) -> Result<Self> {
+        let mut elems = vec![EvalAst::ZERO; col];
 
         *elems.last_mut().ok_or(MathError::EmptyMatrix)? = one;
 
@@ -905,11 +882,11 @@ impl Matrix {
         }))
     }
 
-    pub fn matrix_basis_elem(col: usize, row: usize, one: Option<Value>) -> Result<Self> {
+    pub fn matrix_basis_elem(col: usize, row: usize, one: Option<EvalAst>) -> Result<Self> {
         // the 1 will always be in the last place
-        let mut elems = vec![Value::ZERO; col * row];
+        let mut elems = vec![EvalAst::ZERO; col * row];
 
-        *elems.last_mut().ok_or(MathError::EmptyMatrix)? = one.unwrap_or(Value::ONE);
+        *elems.last_mut().ok_or(MathError::EmptyMatrix)? = one.unwrap_or(EvalAst::ONE);
 
         Ok(Self::UnboundedWidth(ConcreteMatrix {
             elems,
@@ -992,14 +969,14 @@ impl Matrix {
         }
     }
 
-    pub fn norm_sq(self) -> Result<Value> {
+    pub fn norm_sq(self) -> Result<EvalAst> {
         match self {
             Matrix::Identity { concrete, scale } => {
                 if concrete.width == 0 {
                     Ok(scale
                         .map(|x| x.norm_sq())
                         .transpose()?
-                        .unwrap_or(Value::ONE))
+                        .unwrap_or(EvalAst::ONE))
                 } else {
                     concrete.norm_sq()
                 }

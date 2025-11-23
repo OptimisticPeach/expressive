@@ -1,4 +1,4 @@
-use crate::{Floatify, errors::Result};
+use crate::errors::Result;
 use num_complex::Complex;
 use num_rational::Ratio;
 use num_traits::ToPrimitive;
@@ -8,40 +8,10 @@ pub type RationalComplex = Complex<Rational>;
 
 pub type FloatComplex = Complex<f64>;
 
-impl Floatify for Rational {
-    type Floated = f64;
-
-    fn floatify(self) -> Self::Floated {
-        self.to_f64().unwrap()
-    }
-}
-
-impl Floatify for RationalComplex {
-    type Floated = FloatComplex;
-
-    fn floatify(self) -> Self::Floated {
-        FloatComplex {
-            re: self.re.floatify(),
-            im: self.im.floatify(),
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Scalar {
     Rational(RationalComplex),
     Float(FloatComplex),
-}
-
-impl Floatify for Scalar {
-    type Floated = Self;
-
-    fn floatify(self) -> Self::Floated {
-        match self {
-            Self::Rational(x) => Self::Float(x.floatify()),
-            x => x,
-        }
-    }
 }
 
 macro_rules! impl_scalar_ops {
@@ -49,9 +19,15 @@ macro_rules! impl_scalar_ops {
         pub fn $name(self, other: Self) -> Self {
             match (self, other) {
                 (Self::Rational(x), Self::Rational(y)) => Self::Rational(x $op y),
-                (Self::Rational(x), Self::Float(y)) => Self::Float(x.floatify() $op y),
-                (Self::Float(x), Self::Rational(y)) => Self::Float(x $op y.floatify()),
                 (Self::Float(x), Self::Float(y)) => Self::Float(x $op y),
+
+                _ => {
+                    let (Self::Float(x), Self::Float(y)) = (self.floatify(), other.floatify()) else {
+                        unreachable!();
+                    };
+
+                    Self::Float(x $op y)
+                }
             }
         }
     }
@@ -72,11 +48,22 @@ impl Scalar {
     pub const ZERO: Self = Scalar::Rational(RationalComplex::ZERO);
     pub const IMAG: Self = Scalar::Rational(RationalComplex::I);
 
-    fn float(&self) -> FloatComplex {
+    fn floatify(self) -> Self {
         match self {
-            Scalar::Rational(complex) => complex.floatify(),
-            Scalar::Float(complex) => *complex,
+            Self::Rational(x) => Self::Float(FloatComplex {
+                re: x.re.to_f64().unwrap_or(f64::NAN),
+                im: x.im.to_f64().unwrap_or(f64::NAN),
+            }),
+            x => x,
         }
+    }
+
+    fn float(&self) -> FloatComplex {
+        let Self::Float(x) = self.floatify() else {
+            unreachable!();
+        };
+
+        x
     }
 
     // todo: failsafe to go to f64 if we overflow i128
@@ -159,7 +146,7 @@ impl Scalar {
                     return Self::Rational(result);
                 }
 
-                complex.floatify()
+                self.float()
             }
             Scalar::Float(complex) => complex,
         };
