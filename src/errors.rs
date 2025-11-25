@@ -5,6 +5,8 @@ use std::{
     ops::{FromResidual, Try},
 };
 
+pub type Result<T> = std::result::Result<T, MathError>;
+
 #[derive(Debug)]
 pub enum MathError {
     NonSquareDeterminant,
@@ -49,7 +51,7 @@ pub enum EvalStatus<T> {
 }
 
 impl<T> FromResidual for EvalStatus<T> {
-    fn from_residual(residual: Result<(T, Vec<Ident>), MathError>) -> Self {
+    fn from_residual(residual: std::result::Result<(T, Vec<Ident>), MathError>) -> Self {
         match residual {
             Ok((partially_reduced, idents)) => Self::Halted(partially_reduced, idents),
             Err(e) => Self::Errored(e),
@@ -68,7 +70,7 @@ impl<T> FromResidual<EvalStatus<Infallible>> for EvalStatus<T> {
 impl<T> Try for EvalStatus<T> {
     type Output = T;
 
-    type Residual = Result<(T, Vec<Ident>), MathError>;
+    type Residual = std::result::Result<(T, Vec<Ident>), MathError>;
 
     fn from_output(output: T) -> Self {
         Self::Yielded(output)

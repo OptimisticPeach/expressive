@@ -1,7 +1,7 @@
 use crate::{
     ast::Ast,
     errors::{EvalStatus, MathError},
-    eval::{Ident, function::Function, matrix::Matrix, scalar::Scalar},
+    eval::{Ident, NodeId, function::Function, matrix::Matrix, scalar::Scalar},
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -12,7 +12,7 @@ pub enum EvalAst {
     Symbol(Ident),
 
     // todo: replace w/ arena
-    Application(Box<EvalAst>, Vec<EvalAst>),
+    Application(NodeId, Vec<NodeId>),
 }
 
 impl Default for EvalAst {
